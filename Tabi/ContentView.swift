@@ -125,12 +125,11 @@ class MedicationManager: ObservableObject {
     }
 }
 
-// MARK: - Today View
+// MARK: - Today View (FIXED!)
 
 struct TodayView: View {
     @ObservedObject var medicationManager: MedicationManager
-    @State private var showingCamera = false
-    @State private var selectedMedication: Medication?
+    @State private var cameraSheetMedication: Medication? = nil
     
     var body: some View {
         NavigationView {
@@ -145,8 +144,8 @@ struct TodayView: View {
                             MedicationCard(
                                 medication: medication,
                                 onTakePhoto: {
-                                    selectedMedication = medication
-                                    showingCamera = true
+                                    print("📸 Opening camera for: \(medication.name)")
+                                    cameraSheetMedication = medication
                                 }
                             )
                         }
@@ -156,14 +155,15 @@ struct TodayView: View {
             }
             .navigationTitle("PillQuest")
         }
-        .sheet(isPresented: $showingCamera) {
-            if let medication = selectedMedication {
-                CameraView(
-                    medication: medication,
-                    medicationManager: medicationManager,
-                    isPresented: $showingCamera
+        .fullScreenCover(item: $cameraSheetMedication) { medication in
+            CameraView(
+                medication: medication,
+                medicationManager: medicationManager,
+                isPresented: Binding(
+                    get: { cameraSheetMedication != nil },
+                    set: { if !$0 { cameraSheetMedication = nil } }
                 )
-            }
+            )
         }
     }
 }
@@ -285,9 +285,37 @@ struct CameraView: View {
     @State private var showingAnalysis = false
     @State private var capturedImage: UIImage?
     
+    init(medication: Medication, medicationManager: MedicationManager, isPresented: Binding<Bool>) {
+        self.medication = medication
+        self.medicationManager = medicationManager
+        self._isPresented = isPresented
+        print("✅ CameraView INIT for medication: \(medication.name)")
+    }
+    
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            
+            // DEBUG OVERLAY
+            VStack {
+                Text("🔍 DEBUG")
+                    .font(.caption)
+                    .foregroundColor(.yellow)
+                Text("Auth: \(cameraManager.isAuthorized ? "✅" : "❌")")
+                    .font(.caption2)
+                    .foregroundColor(.white)
+                Text("Running: \(cameraManager.isSessionRunning ? "✅" : "❌")")
+                    .font(.caption2)
+                    .foregroundColor(.white)
+                Text("Setup: \(cameraManager.isSetup ? "✅" : "❌")")
+                    .font(.caption2)
+                    .foregroundColor(.white)
+            }
+            .padding(8)
+            .background(Color.red.opacity(0.8))
+            .cornerRadius(8)
+            .position(x: UIScreen.main.bounds.width / 2, y: 60)
+            .zIndex(1000)
             
             if cameraManager.isAuthorized {
                 // Camera Preview
@@ -321,7 +349,6 @@ struct CameraView: View {
                         
                         Spacer()
                         
-                        // Placeholder for symmetry
                         Circle()
                             .fill(Color.clear)
                             .frame(width: 44, height: 44)
@@ -356,7 +383,6 @@ struct CameraView: View {
                     
                     // Bottom controls
                     HStack {
-                        // Gallery button (placeholder)
                         Button(action: {}) {
                             RoundedRectangle(cornerRadius: 12)
                                 .stroke(Color.white, lineWidth: 2)
@@ -366,7 +392,7 @@ struct CameraView: View {
                                         .foregroundColor(.white)
                                 )
                         }
-                        .disabled(true) // Disable for now
+                        .disabled(true)
                         
                         Spacer()
                         
@@ -385,17 +411,22 @@ struct CameraView: View {
                         
                         Spacer()
                         
-                        // Flash toggle (placeholder)
-                        Button(action: {}) {
+                        // Restart button
+                        Button(action: {
+                            print("🔄 Manual restart")
+                            cameraManager.stopSession()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                cameraManager.startSession()
+                            }
+                        }) {
                             Circle()
-                                .stroke(Color.white, lineWidth: 2)
+                                .stroke(Color.yellow, lineWidth: 2)
                                 .frame(width: 50, height: 50)
                                 .overlay(
-                                    Image(systemName: "bolt.slash")
-                                        .foregroundColor(.white)
+                                    Image(systemName: "arrow.clockwise")
+                                        .foregroundColor(.yellow)
                                 )
                         }
-                        .disabled(true) // Disable for now
                     }
                     .padding(.horizontal, 40)
                     .padding(.bottom, 50)
@@ -431,6 +462,14 @@ struct CameraView: View {
                     .cornerRadius(12)
                     .padding(.horizontal, 32)
                     
+                    Button("Open Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.8))
+                    
                     Button("Not Now") {
                         isPresented = false
                     }
@@ -440,9 +479,15 @@ struct CameraView: View {
             }
         }
         .onAppear {
-            cameraManager.startSession()
+            print("📱 CameraView appeared")
+            if cameraManager.isAuthorized {
+                cameraManager.startSession()
+            } else {
+                cameraManager.checkPermission()
+            }
         }
         .onDisappear {
+            print("📱 CameraView disappeared")
             cameraManager.stopSession()
         }
         .sheet(isPresented: $showingAnalysis) {
@@ -485,24 +530,35 @@ struct CameraView: View {
 class CameraManager: NSObject, ObservableObject {
     @Published var isAuthorized = false
     @Published var session = AVCaptureSession()
+    @Published var isSessionRunning = false
+    @Published var isSetup = false
     
     private var photoOutput: AVCapturePhotoOutput?
     private var currentPhotoDelegate: PhotoCaptureDelegate?
+    private let sessionQueue = DispatchQueue(label: "camera.session.queue")
     
     override init() {
         super.init()
+        print("🎬 CameraManager init")
         checkPermission()
     }
     
     func checkPermission() {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        print("🔐 Permission status: \(status.rawValue)")
+        
+        switch status {
         case .authorized:
+            print("✅ Authorized")
             DispatchQueue.main.async {
                 self.isAuthorized = true
             }
+            setupSession()
         case .notDetermined:
+            print("❓ Not determined - requesting")
             requestPermission()
         default:
+            print("❌ Denied/Restricted")
             DispatchQueue.main.async {
                 self.isAuthorized = false
             }
@@ -511,85 +567,137 @@ class CameraManager: NSObject, ObservableObject {
     
     func requestPermission() {
         AVCaptureDevice.requestAccess(for: .video) { granted in
+            print("🔐 Permission result: \(granted ? "✅" : "❌")")
             DispatchQueue.main.async {
                 self.isAuthorized = granted
-                if granted {
-                    self.setupSession()
+            }
+            if granted {
+                self.setupSession()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.startSession()
                 }
             }
         }
     }
     
     func startSession() {
-        guard isAuthorized else { return }
-        
-        if !session.isRunning {
-            DispatchQueue.global(qos: .background).async {
-                self.session.startRunning()
-            }
+        print("🎥 startSession called")
+        guard isAuthorized else {
+            print("❌ Not authorized")
+            return
         }
         
-        setupSession()
+        if !isSetup {
+            print("⚠️ Not setup, setting up...")
+            setupSession()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.startSession()
+            }
+            return
+        }
+        
+        guard !session.isRunning else {
+            print("✅ Already running")
+            return
+        }
+        
+        sessionQueue.async {
+            print("🎥 Starting session...")
+            self.session.startRunning()
+            DispatchQueue.main.async {
+                self.isSessionRunning = self.session.isRunning
+                print("✅ Running: \(self.isSessionRunning)")
+            }
+        }
     }
     
     func stopSession() {
-        if session.isRunning {
-            DispatchQueue.global(qos: .background).async {
-                self.session.stopRunning()
+        guard session.isRunning else { return }
+        sessionQueue.async {
+            print("🛑 Stopping session")
+            self.session.stopRunning()
+            DispatchQueue.main.async {
+                self.isSessionRunning = false
             }
         }
     }
     
     private func setupSession() {
-        guard session.inputs.isEmpty else { return } // Already set up
-        
-        session.beginConfiguration()
-        
-        // Add camera input
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let input = try? AVCaptureDeviceInput(device: camera) else {
-            session.commitConfiguration()
+        if isSetup {
+            print("⚠️ Already setup")
             return
         }
         
-        if session.canAddInput(input) {
-            session.addInput(input)
+        guard isAuthorized else {
+            print("❌ Can't setup - not authorized")
+            return
         }
         
-        // Add photo output
-        photoOutput = AVCapturePhotoOutput()
-        if let photoOutput = photoOutput, session.canAddOutput(photoOutput) {
-            session.addOutput(photoOutput)
+        sessionQueue.async {
+            print("⚙️ Setting up session...")
             
-            // Configure photo settings
-            if photoOutput.isHighResolutionCaptureEnabled {
-                photoOutput.isHighResolutionCaptureEnabled = true
+            self.session.beginConfiguration()
+            
+            if self.session.canSetSessionPreset(.photo) {
+                self.session.sessionPreset = .photo
+            }
+            
+            guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+                print("❌ No camera found")
+                self.session.commitConfiguration()
+                return
+            }
+            
+            print("📷 Camera: \(camera.localizedName)")
+            
+            do {
+                let input = try AVCaptureDeviceInput(device: camera)
+                if self.session.canAddInput(input) {
+                    self.session.addInput(input)
+                    print("✅ Input added")
+                }
+            } catch {
+                print("❌ Input error: \(error)")
+                self.session.commitConfiguration()
+                return
+            }
+            
+            let output = AVCapturePhotoOutput()
+            if self.session.canAddOutput(output) {
+                self.session.addOutput(output)
+                output.isHighResolutionCaptureEnabled = true
+                self.photoOutput = output
+                print("✅ Output added")
+            }
+            
+            self.session.commitConfiguration()
+            print("✅ Setup complete")
+            
+            DispatchQueue.main.async {
+                self.isSetup = true
             }
         }
-        
-        // Set session quality
-        if session.canSetSessionPreset(.photo) {
-            session.sessionPreset = .photo
-        }
-        
-        session.commitConfiguration()
     }
     
     func capturePhoto(completion: @escaping (UIImage?) -> Void) {
         guard let photoOutput = photoOutput else {
+            print("❌ No photo output")
             completion(nil)
             return
         }
         
-        let settings = AVCapturePhotoSettings()
-        
-        // Enable high-resolution capture if available
-        if photoOutput.isHighResolutionCaptureEnabled {
-            settings.isHighResolutionPhotoEnabled = true
+        guard session.isRunning else {
+            print("❌ Session not running")
+            completion(nil)
+            return
         }
         
-        // Create photo delegate
+        print("📸 Capturing...")
+        let settings = AVCapturePhotoSettings()
+        settings.isHighResolutionPhotoEnabled = true
+        
         currentPhotoDelegate = PhotoCaptureDelegate { image in
+            print(image != nil ? "✅ Photo captured" : "❌ Capture failed")
             completion(image)
         }
         
@@ -603,23 +711,36 @@ struct CameraPreviewView: UIViewRepresentable {
     @ObservedObject var cameraManager: CameraManager
     
     func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .black
+        
         let previewLayer = AVCaptureVideoPreviewLayer(session: cameraManager.session)
         previewLayer.videoGravity = .resizeAspectFill
+        previewLayer.connection?.videoOrientation = .portrait
         view.layer.addSublayer(previewLayer)
         
-        // Store reference to layer for updates
-        view.layer.name = "preview"
+        context.coordinator.previewLayer = previewLayer
         
         return view
     }
     
     func updateUIView(_ uiView: UIView, context: Context) {
-        DispatchQueue.main.async {
-            if let previewLayer = uiView.layer.sublayers?.first(where: { $0.name == "preview" }) as? AVCaptureVideoPreviewLayer {
+        if let previewLayer = context.coordinator.previewLayer {
+            DispatchQueue.main.async {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
                 previewLayer.frame = uiView.bounds
+                CATransaction.commit()
             }
         }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator {
+        var previewLayer: AVCaptureVideoPreviewLayer?
     }
 }
 
@@ -633,22 +754,14 @@ class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     }
     
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        defer {
-            // Clean up the delegate reference
-            DispatchQueue.main.async {
-                // The delegate will be deallocated after this
-            }
-        }
-        
         if let error = error {
-            print("Photo capture error: \(error)")
+            print("Photo error: \(error)")
             completion(nil)
             return
         }
         
         guard let imageData = photo.fileDataRepresentation(),
               let image = UIImage(data: imageData) else {
-            print("Failed to convert photo to UIImage")
             completion(nil)
             return
         }
@@ -657,7 +770,7 @@ class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     }
 }
 
-// MARK: - Analysis Result View (Simplified)
+// MARK: - Analysis Result View
 
 struct AnalysisResultView: View {
     let capturedImage: UIImage
@@ -676,7 +789,6 @@ struct AnalysisResultView: View {
                 .fontWeight(.bold)
                 .padding(.top, 40)
             
-            // Show captured image
             Image(uiImage: capturedImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -685,7 +797,6 @@ struct AnalysisResultView: View {
             
             if isAnalyzing {
                 VStack(spacing: 16) {
-                    // Simple loading indicator that works on all iOS versions
                     Text("🔄")
                         .font(.system(size: 40))
                         .rotationEffect(.degrees(isAnalyzing ? 360 : 0))
@@ -698,7 +809,6 @@ struct AnalysisResultView: View {
                 }
             } else {
                 VStack(spacing: 20) {
-                    // Success result
                     VStack(spacing: 12) {
                         Text("✅")
                             .font(.system(size: 50))
@@ -720,7 +830,6 @@ struct AnalysisResultView: View {
                     .background(Color.green.opacity(0.1))
                     .cornerRadius(16)
                     
-                    // Points earned
                     Text("🎉 +\(medicationPoints) Points Earned!")
                         .font(.headline)
                         .fontWeight(.bold)
@@ -775,7 +884,6 @@ struct ProgressView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Achievements Section
                     VStack(alignment: .leading, spacing: 16) {
                         Text("🏅 Recent Achievements")
                             .font(.headline)
@@ -787,7 +895,6 @@ struct ProgressView: View {
                     }
                     .padding(.top)
                     
-                    // Weekly Progress
                     VStack(alignment: .leading, spacing: 16) {
                         Text("📊 This Week")
                             .font(.headline)
