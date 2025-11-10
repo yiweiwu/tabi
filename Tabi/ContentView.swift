@@ -276,7 +276,7 @@ struct MedicationCard: View {
     }
 }
 
-// MARK: - Camera View with Real Camera
+// ENHANCED CAMERA VIEW - Replace your CameraView with this
 
 struct CameraView: View {
     let medication: Medication
@@ -297,25 +297,65 @@ struct CameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             
-            // DEBUG OVERLAY
-            VStack {
-                Text("🔍 DEBUG")
-                    .font(.caption)
+            // ENHANCED DEBUG OVERLAY
+            VStack(spacing: 4) {
+                Text("🔍 DEBUG STATUS")
+                    .font(.caption.bold())
                     .foregroundColor(.yellow)
-                Text("Auth: \(cameraManager.isAuthorized ? "✅" : "❌")")
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                Text("Running: \(cameraManager.isSessionRunning ? "✅" : "❌")")
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                Text("Setup: \(cameraManager.isSetup ? "✅" : "❌")")
-                    .font(.caption2)
-                    .foregroundColor(.white)
+                
+                HStack {
+                    Text("Auth:")
+                    Text(cameraManager.isAuthorized ? "✅" : "❌")
+                }
+                .font(.caption2)
+                .foregroundColor(.white)
+                
+                HStack {
+                    Text("Running:")
+                    Text(cameraManager.isSessionRunning ? "✅" : "❌")
+                }
+                .font(.caption2)
+                .foregroundColor(.white)
+                
+                HStack {
+                    Text("Setup:")
+                    Text(cameraManager.isSetup ? "✅" : "❌")
+                }
+                .font(.caption2)
+                .foregroundColor(.white)
+                
+                HStack {
+                    Text("Inputs:")
+                    Text("\(cameraManager.session.inputs.count)")
+                }
+                .font(.caption2)
+                .foregroundColor(.white)
+                
+                HStack {
+                    Text("Outputs:")
+                    Text("\(cameraManager.session.outputs.count)")
+                }
+                .font(.caption2)
+                .foregroundColor(.white)
+                
+                // MANUAL START BUTTON
+                Button(action: {
+                    print("🔵 MANUAL START BUTTON TAPPED")
+                    cameraManager.forceSetupAndStart()
+                }) {
+                    Text("🚀 START CAMERA")
+                        .font(.caption2.bold())
+                        .foregroundColor(.black)
+                        .padding(4)
+                        .background(Color.yellow)
+                        .cornerRadius(4)
+                }
+                .padding(.top, 4)
             }
             .padding(8)
-            .background(Color.red.opacity(0.8))
+            .background(Color.red.opacity(0.9))
             .cornerRadius(8)
-            .position(x: UIScreen.main.bounds.width / 2, y: 60)
+            .position(x: UIScreen.main.bounds.width / 2, y: 100)
             .zIndex(1000)
             
             if cameraManager.isAuthorized {
@@ -324,6 +364,8 @@ struct CameraView: View {
                     .ignoresSafeArea()
                 
                 VStack {
+                    Spacer().frame(height: 150) // Space for debug box
+                    
                     // Top header
                     HStack {
                         Button(action: {
@@ -414,7 +456,7 @@ struct CameraView: View {
                         
                         // Restart button
                         Button(action: {
-                            print("🔄 Manual restart")
+                            print("🔄 RESTART BUTTON TAPPED")
                             cameraManager.stopSession()
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 cameraManager.startSession()
@@ -480,15 +522,22 @@ struct CameraView: View {
             }
         }
         .onAppear {
-            print("📱 CameraView appeared")
+            print("📱 ========== CameraView APPEARED ==========")
+            print("📱 Medication: \(medication.name)")
+            print("📱 isAuthorized: \(cameraManager.isAuthorized)")
+            print("📱 isSetup: \(cameraManager.isSetup)")
+            print("📱 isRunning: \(cameraManager.isSessionRunning)")
+            
             if cameraManager.isAuthorized {
+                print("📱 Already authorized - starting session")
                 cameraManager.startSession()
             } else {
+                print("📱 Not authorized - checking permission")
                 cameraManager.checkPermission()
             }
         }
         .onDisappear {
-            print("📱 CameraView disappeared")
+            print("📱 ========== CameraView DISAPPEARED ==========")
             cameraManager.stopSession()
         }
         .sheet(isPresented: $showingAnalysis) {
@@ -515,6 +564,7 @@ struct CameraView: View {
     }
     
     func capturePhoto() {
+        print("📸 Capture button tapped")
         cameraManager.capturePhoto { image in
             if let image = image {
                 DispatchQueue.main.async {
@@ -526,7 +576,7 @@ struct CameraView: View {
     }
 }
 
-// MARK: - Camera Manager
+// ENHANCED CAMERA MANAGER - Replace your CameraManager with this
 
 class CameraManager: NSObject, ObservableObject {
     @Published var isAuthorized = false
@@ -540,26 +590,37 @@ class CameraManager: NSObject, ObservableObject {
     
     override init() {
         super.init()
-        print("🎬 CameraManager init")
+        print("🎬 ========== CameraManager INIT ==========")
         checkPermission()
     }
     
     func checkPermission() {
         let status = AVCaptureDevice.authorizationStatus(for: .video)
-        print("🔐 Permission status: \(status.rawValue)")
+        print("🔐 Camera permission status raw value: \(status.rawValue)")
         
         switch status {
         case .authorized:
-            print("✅ Authorized")
+            print("✅ Camera AUTHORIZED")
             DispatchQueue.main.async {
                 self.isAuthorized = true
             }
+            print("🔧 Calling setupSession from checkPermission")
             setupSession()
         case .notDetermined:
-            print("❓ Not determined - requesting")
+            print("❓ Camera permission NOT DETERMINED - will request")
             requestPermission()
-        default:
-            print("❌ Denied/Restricted")
+        case .denied:
+            print("❌ Camera permission DENIED")
+            DispatchQueue.main.async {
+                self.isAuthorized = false
+            }
+        case .restricted:
+            print("🚫 Camera permission RESTRICTED")
+            DispatchQueue.main.async {
+                self.isAuthorized = false
+            }
+        @unknown default:
+            print("⚠️ Unknown camera permission status")
             DispatchQueue.main.async {
                 self.isAuthorized = false
             }
@@ -567,8 +628,9 @@ class CameraManager: NSObject, ObservableObject {
     }
     
     func requestPermission() {
+        print("🔐 Requesting camera permission...")
         AVCaptureDevice.requestAccess(for: .video) { granted in
-            print("🔐 Permission result: \(granted ? "✅" : "❌")")
+            print("🔐 Permission result: \(granted ? "✅ GRANTED" : "❌ DENIED")")
             DispatchQueue.main.async {
                 self.isAuthorized = granted
             }
@@ -581,131 +643,212 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
-    func startSession() {
-        print("🎥 startSession called")
-        guard isAuthorized else {
-            print("❌ Not authorized")
+    // NEW: Force setup and start (for manual button)
+    func forceSetupAndStart() {
+        print("🚀 ========== FORCE SETUP AND START ==========")
+        print("🚀 Current state:")
+        print("   - isAuthorized: \(isAuthorized)")
+        print("   - isSetup: \(isSetup)")
+        print("   - isRunning: \(session.isRunning)")
+        print("   - inputs: \(session.inputs.count)")
+        print("   - outputs: \(session.outputs.count)")
+        
+        if !isAuthorized {
+            print("❌ Not authorized - cannot start")
             return
         }
         
         if !isSetup {
-            print("⚠️ Not setup, setting up...")
+            print("🔧 Not setup - calling setupSession")
+            setupSession()
+            // Wait for setup to complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                print("🔧 After setup delay, calling startSession")
+                self.startSession()
+            }
+        } else {
+            print("✅ Already setup - calling startSession")
+            startSession()
+        }
+    }
+    
+    func startSession() {
+        print("🎥 ========== START SESSION CALLED ==========")
+        print("   - isAuthorized: \(isAuthorized)")
+        print("   - isSetup: \(isSetup)")
+        print("   - isRunning: \(session.isRunning)")
+        
+        guard isAuthorized else {
+            print("❌ Cannot start - not authorized")
+            return
+        }
+        
+        if !isSetup {
+            print("⚠️ Not setup yet - calling setupSession first")
             setupSession()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                print("⏰ Retry startSession after setup")
                 self.startSession()
             }
             return
         }
         
         guard !session.isRunning else {
-            print("✅ Already running")
+            print("✅ Session already running")
+            DispatchQueue.main.async {
+                self.isSessionRunning = true
+            }
             return
         }
         
         sessionQueue.async {
-            print("🎥 Starting session...")
+            print("🎥 Starting session on background queue...")
             self.session.startRunning()
+            let isRunning = self.session.isRunning
+            print("🎥 Session.startRunning() completed. isRunning: \(isRunning)")
+            
             DispatchQueue.main.async {
-                self.isSessionRunning = self.session.isRunning
-                print("✅ Running: \(self.isSessionRunning)")
+                self.isSessionRunning = isRunning
+                print("✅ Published isSessionRunning updated to: \(isRunning)")
             }
         }
     }
     
     func stopSession() {
-        guard session.isRunning else { return }
+        print("🛑 ========== STOP SESSION CALLED ==========")
+        guard session.isRunning else {
+            print("⚠️ Session not running - nothing to stop")
+            return
+        }
+        
         sessionQueue.async {
-            print("🛑 Stopping session")
+            print("🛑 Stopping session...")
             self.session.stopRunning()
             DispatchQueue.main.async {
                 self.isSessionRunning = false
+                print("✅ Session stopped")
             }
         }
     }
     
     private func setupSession() {
+        print("⚙️ ========== SETUP SESSION CALLED ==========")
+        
         if isSetup {
-            print("⚠️ Already setup")
+            print("⚠️ Already setup - skipping")
             return
         }
         
         guard isAuthorized else {
-            print("❌ Can't setup - not authorized")
+            print("❌ Cannot setup - not authorized")
             return
         }
         
         sessionQueue.async {
-            print("⚙️ Setting up session...")
+            print("⚙️ Setting up session on background queue...")
             
             self.session.beginConfiguration()
+            print("⚙️ Session configuration began")
             
+            // Set preset
             if self.session.canSetSessionPreset(.photo) {
                 self.session.sessionPreset = .photo
+                print("✅ Session preset set to .photo")
+            } else {
+                print("⚠️ Cannot set preset to .photo")
             }
             
+            // Get camera
             guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-                print("❌ No camera found")
+                print("❌ CRITICAL: No back camera found!")
                 self.session.commitConfiguration()
                 return
             }
             
-            print("📷 Camera: \(camera.localizedName)")
+            print("📷 Found camera: \(camera.localizedName)")
+            print("📷 Camera uniqueID: \(camera.uniqueID)")
             
+            // Create input
             do {
                 let input = try AVCaptureDeviceInput(device: camera)
+                print("✅ Created AVCaptureDeviceInput")
+                
                 if self.session.canAddInput(input) {
                     self.session.addInput(input)
-                    print("✅ Input added")
+                    print("✅ Camera input added to session")
+                    print("   Total inputs: \(self.session.inputs.count)")
+                } else {
+                    print("❌ CRITICAL: Cannot add camera input to session")
                 }
             } catch {
-                print("❌ Input error: \(error)")
+                print("❌ CRITICAL: Error creating camera input: \(error.localizedDescription)")
                 self.session.commitConfiguration()
                 return
             }
             
+            // Create output
             let output = AVCapturePhotoOutput()
+            print("✅ Created AVCapturePhotoOutput")
+            
             if self.session.canAddOutput(output) {
                 self.session.addOutput(output)
                 output.isHighResolutionCaptureEnabled = true
                 self.photoOutput = output
-                print("✅ Output added")
+                print("✅ Photo output added to session")
+                print("   Total outputs: \(self.session.outputs.count)")
+            } else {
+                print("❌ CRITICAL: Cannot add photo output to session")
             }
             
             self.session.commitConfiguration()
-            print("✅ Setup complete")
+            print("✅ Session configuration committed")
+            
+            print("📊 Final session state:")
+            print("   - Inputs: \(self.session.inputs.count)")
+            print("   - Outputs: \(self.session.outputs.count)")
+            print("   - Preset: \(self.session.sessionPreset.rawValue)")
             
             DispatchQueue.main.async {
                 self.isSetup = true
+                print("✅ Published isSetup updated to: true")
+                print("⚙️ ========== SETUP COMPLETE ==========")
             }
         }
     }
     
     func capturePhoto(completion: @escaping (UIImage?) -> Void) {
+        print("📸 ========== CAPTURE PHOTO CALLED ==========")
+        
         guard let photoOutput = photoOutput else {
-            print("❌ No photo output")
+            print("❌ No photo output available")
             completion(nil)
             return
         }
         
         guard session.isRunning else {
-            print("❌ Session not running")
+            print("❌ Session not running - cannot capture")
             completion(nil)
             return
         }
         
-        print("📸 Capturing...")
+        print("📸 Creating photo settings...")
         let settings = AVCapturePhotoSettings()
         settings.isHighResolutionPhotoEnabled = true
+        print("📸 Capturing photo with settings...")
         
         currentPhotoDelegate = PhotoCaptureDelegate { image in
-            print(image != nil ? "✅ Photo captured" : "❌ Capture failed")
+            if image != nil {
+                print("✅ Photo captured successfully!")
+            } else {
+                print("❌ Photo capture failed")
+            }
             completion(image)
         }
         
         photoOutput.capturePhoto(with: settings, delegate: currentPhotoDelegate!)
+        print("📸 capturePhoto called on photoOutput")
     }
 }
-
 // MARK: - Camera Preview
 
 struct CameraPreviewView: UIViewRepresentable {
