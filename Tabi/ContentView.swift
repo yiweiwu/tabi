@@ -5,7 +5,6 @@ import UIKit
 // MARK: - Main Content View
 
 struct ContentView: View {
-    // We Wu testing
     @StateObject private var medicationManager = MedicationManager()
     @State private var selectedTab = 0
     
@@ -792,7 +791,6 @@ class CameraManager: NSObject, ObservableObject {
             
             if self.session.canAddOutput(output) {
                 self.session.addOutput(output)
-                output.isHighResolutionCaptureEnabled = true
                 self.photoOutput = output
                 print("✅ Photo output added to session")
                 print("   Total outputs: \(self.session.outputs.count)")
@@ -833,7 +831,6 @@ class CameraManager: NSObject, ObservableObject {
         
         print("📸 Creating photo settings...")
         let settings = AVCapturePhotoSettings()
-        settings.isHighResolutionPhotoEnabled = true
         print("📸 Capturing photo with settings...")
         
         currentPhotoDelegate = PhotoCaptureDelegate { image in
