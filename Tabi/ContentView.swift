@@ -527,12 +527,15 @@ struct CameraView: View {
             print("📱 isSetup: \(cameraManager.isSetup)")
             print("📱 isRunning: \(cameraManager.isSessionRunning)")
             
-            if cameraManager.isAuthorized {
-                print("📱 Already authorized - starting session")
-                cameraManager.startSession()
-            } else {
-                print("📱 Not authorized - checking permission")
-                cameraManager.checkPermission()
+            // Small delay to let view hierarchy settle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if cameraManager.isAuthorized {
+                    print("📱 Already authorized - starting session")
+                    cameraManager.startSession()
+                } else {
+                    print("📱 Not authorized - checking permission")
+                    cameraManager.checkPermission()
+                }
             }
         }
         .onDisappear {
@@ -587,6 +590,9 @@ class CameraManager: NSObject, ObservableObject {
     private var currentPhotoDelegate: PhotoCaptureDelegate?
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
     
+    // Prevent multiple simultaneous setup calls
+    private var isSettingUp = false
+    
     override init() {
         super.init()
         print("🎬 ========== CameraManager INIT ==========")
@@ -603,8 +609,7 @@ class CameraManager: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self.isAuthorized = true
             }
-            print("🔧 Calling setupSession from checkPermission")
-            setupSession()
+            // DON'T auto-setup here - let the view trigger it
         case .notDetermined:
             print("❓ Camera permission NOT DETERMINED - will request")
             requestPermission()
@@ -634,10 +639,8 @@ class CameraManager: NSObject, ObservableObject {
                 self.isAuthorized = granted
             }
             if granted {
-                self.setupSession()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.startSession()
-                }
+                // Setup will be triggered when view appears
+                print("✅ Permission granted - waiting for view to trigger setup")
             }
         }
     }
@@ -652,18 +655,20 @@ class CameraManager: NSObject, ObservableObject {
         print("   - inputs: \(session.inputs.count)")
         print("   - outputs: \(session.outputs.count)")
         
-        if !isAuthorized {
+        guard isAuthorized else {
             print("❌ Not authorized - cannot start")
             return
         }
         
         if !isSetup {
-            print("🔧 Not setup - calling setupSession")
-            setupSession()
-            // Wait for setup to complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                print("🔧 After setup delay, calling startSession")
-                self.startSession()
+            print("🔧 Not setup - calling setupSession with completion")
+            setupSession { [weak self] success in
+                if success {
+                    print("🔧 Setup completed successfully, now starting")
+                    self?.startSession()
+                } else {
+                    print("❌ Setup failed")
+                }
             }
         } else {
             print("✅ Already setup - calling startSession")
@@ -682,12 +687,15 @@ class CameraManager: NSObject, ObservableObject {
             return
         }
         
-        if !isSetup {
-            print("⚠️ Not setup yet - calling setupSession first")
-            setupSession()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                print("⏰ Retry startSession after setup")
-                self.startSession()
+        guard isSetup else {
+            print("⚠️ Not setup yet - will setup first")
+            setupSession { [weak self] success in
+                if success {
+                    print("✅ Setup complete, now starting session")
+                    self?.startSession()
+                } else {
+                    print("❌ Setup failed, cannot start session")
+                }
             }
             return
         }
@@ -717,6 +725,9 @@ class CameraManager: NSObject, ObservableObject {
         print("🛑 ========== STOP SESSION CALLED ==========")
         guard session.isRunning else {
             print("⚠️ Session not running - nothing to stop")
+            DispatchQueue.main.async {
+                self.isSessionRunning = false
+            }
             return
         }
         
@@ -730,18 +741,29 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
-    private func setupSession() {
+    private func setupSession(completion: @escaping (Bool) -> Void) {
         print("⚙️ ========== SETUP SESSION CALLED ==========")
+        
+        // Prevent multiple simultaneous setup attempts
+        guard !isSettingUp else {
+            print("⚠️ Setup already in progress - skipping")
+            completion(false)
+            return
+        }
         
         if isSetup {
             print("⚠️ Already setup - skipping")
+            completion(true)
             return
         }
         
         guard isAuthorized else {
             print("❌ Cannot setup - not authorized")
+            completion(false)
             return
         }
+        
+        isSettingUp = true
         
         sessionQueue.async {
             print("⚙️ Setting up session on background queue...")
@@ -761,6 +783,10 @@ class CameraManager: NSObject, ObservableObject {
             guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
                 print("❌ CRITICAL: No back camera found!")
                 self.session.commitConfiguration()
+                self.isSettingUp = false
+                DispatchQueue.main.async {
+                    completion(false)
+                }
                 return
             }
             
@@ -778,10 +804,20 @@ class CameraManager: NSObject, ObservableObject {
                     print("   Total inputs: \(self.session.inputs.count)")
                 } else {
                     print("❌ CRITICAL: Cannot add camera input to session")
+                    self.session.commitConfiguration()
+                    self.isSettingUp = false
+                    DispatchQueue.main.async {
+                        completion(false)
+                    }
+                    return
                 }
             } catch {
                 print("❌ CRITICAL: Error creating camera input: \(error.localizedDescription)")
                 self.session.commitConfiguration()
+                self.isSettingUp = false
+                DispatchQueue.main.async {
+                    completion(false)
+                }
                 return
             }
             
@@ -796,6 +832,12 @@ class CameraManager: NSObject, ObservableObject {
                 print("   Total outputs: \(self.session.outputs.count)")
             } else {
                 print("❌ CRITICAL: Cannot add photo output to session")
+                self.session.commitConfiguration()
+                self.isSettingUp = false
+                DispatchQueue.main.async {
+                    completion(false)
+                }
+                return
             }
             
             self.session.commitConfiguration()
@@ -806,10 +848,13 @@ class CameraManager: NSObject, ObservableObject {
             print("   - Outputs: \(self.session.outputs.count)")
             print("   - Preset: \(self.session.sessionPreset.rawValue)")
             
+            self.isSettingUp = false
+            
             DispatchQueue.main.async {
                 self.isSetup = true
                 print("✅ Published isSetup updated to: true")
                 print("⚙️ ========== SETUP COMPLETE ==========")
+                completion(true)
             }
         }
     }
