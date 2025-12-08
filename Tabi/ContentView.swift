@@ -1,16 +1,18 @@
 import SwiftUI
 import AVFoundation
 import UIKit
+import SwiftUI
 
 // MARK: - Main Content View
 
 struct ContentView: View {
     @StateObject private var medicationManager = MedicationManager()
     @State private var selectedTab = 0
+    @State private var selectedMedicationId: UUID?
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            TodayView(medicationManager: medicationManager)
+            TodayView(medicationManager: medicationManager, selectedMedicationId: $selectedMedicationId)
                 .tabItem {
                     Image(systemName: "calendar.circle.fill")
                     Text("Today")
@@ -25,6 +27,24 @@ struct ContentView: View {
                 .tag(1)
         }
         .accentColor(.green)
+        .onOpenURL { url in
+            handleDeepLink(url)
+        }
+    }
+    
+    /// Handle deep links from Visual Intelligence
+    private func handleDeepLink(_ url: URL) {
+        // Example URL: tabi://medication/{uuid}
+        guard url.scheme == "tabi",
+              url.host == "medication",
+              let medicationIdString = url.pathComponents.last,
+              let medicationId = UUID(uuidString: medicationIdString) else {
+            return
+        }
+        
+        // Navigate to the medication
+        selectedMedicationId = medicationId
+        selectedTab = 0 // Switch to Today tab
     }
 }
 

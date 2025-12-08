@@ -4,4 +4,49 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:MedicationEntity.swift">
+   </FileRef>
+   <FileRef
+      location = "group:MedicationVisualIntelligenceQuery.swift">
+   </FileRef>
+   <FileRef
+      location = "group:OpenMedicationIntent.swift">
+   </FileRef>
+   <FileRef
+      location = "group:TabiAppIntentsPackage.swift">
+   </FileRef>
+   <FileRef
+      location = "group:VISUAL_INTELLIGENCE_SETUP.md">
+   </FileRef>
+   <FileRef
+      location = "group:VisualIntelligenceExample.swift">
+   </FileRef>
+   <FileRef
+      location = "group:VISUAL_INTELLIGENCE_README.md">
+   </FileRef>
+   <FileRef
+      location = "group:EnhancedMedicationModels.swift">
+   </FileRef>
+   <FileRef
+      location = "group:AdvancedImageAnalysis.swift">
+   </FileRef>
+   <FileRef
+      location = "group:MedicationAIAnalyzer.swift">
+   </FileRef>
+   <FileRef
+      location = "group:VisualIntelligenceTests.swift">
+   </FileRef>
+   <FileRef
+      location = "group:ENHANCED_VI_DOCUMENTATION.md">
+   </FileRef>
+   <FileRef
+      location = "group:VI_SETUP_CHECKLIST.md">
+   </FileRef>
+   <FileRef
+      location = "group:EnhancedMedicationViews.swift">
+   </FileRef>
+   <FileRef
+      location = "group:VISUAL_INTELLIGENCE_COMPLETE.md">
+   </FileRef>
 </Workspace>
