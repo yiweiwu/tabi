@@ -1,3 +1,10 @@
-# Xcode user data
+# macOS system files
+.DS_Store
+
+# Xcode user-specific files
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
 xcuserdata/
-*.xcuserdatad
+
+# Don't commit signing configuration
+*.xcodeproj/project.pbxproj
