@@ -530,8 +530,8 @@ struct CameraView: View {
             // Small delay to let view hierarchy settle
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if cameraManager.isAuthorized {
-                    print("📱 Already authorized - starting session")
-                    cameraManager.startSession()
+                    print("📱 Already authorized - force setup and start")
+                    cameraManager.forceSetupAndStart()
                 } else {
                     print("📱 Not authorized - checking permission")
                     cameraManager.checkPermission()
