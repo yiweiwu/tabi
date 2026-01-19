@@ -282,7 +282,7 @@ struct CameraView: View {
     let medication: Medication
     @ObservedObject var medicationManager: MedicationManager
     @Binding var isPresented: Bool
-    @StateObject private var cameraManager = CameraManager()
+    @ObservedObject private var cameraManager = CameraManager.shared  // Use singleton!
     @State private var showingAnalysis = false
     @State private var capturedImage: UIImage?
     
@@ -291,6 +291,7 @@ struct CameraView: View {
         self.medicationManager = medicationManager
         self._isPresented = isPresented
         print("✅ CameraView INIT for medication: \(medication.name)")
+        print("   🔍 Using shared CameraManager - isAuthorized: \(CameraManager.shared.isAuthorized)")
     }
     
     var body: some View {
@@ -524,20 +525,23 @@ struct CameraView: View {
         .onAppear {
             print("📱 ========== CameraView APPEARED ==========")
             print("📱 Medication: \(medication.name)")
+            print("📱 Using SHARED CameraManager instance")
             print("📱 isAuthorized: \(cameraManager.isAuthorized)")
             print("📱 isSetup: \(cameraManager.isSetup)")
             print("📱 isRunning: \(cameraManager.isSessionRunning)")
             
             if cameraManager.isAuthorized {
                 print("📱 Already authorized - starting session")
+                // Since camera manager persists, just start the session
                 cameraManager.startSession()
             } else {
-                print("📱 Not authorized - checking permission")
+                print("📱 Not authorized yet - checking permission")
                 cameraManager.checkPermission()
             }
         }
         .onDisappear {
             print("📱 ========== CameraView DISAPPEARED ==========")
+            print("📱 Stopping session (CameraManager persists)")
             cameraManager.stopSession()
         }
         .sheet(isPresented: $showingAnalysis) {
@@ -576,9 +580,12 @@ struct CameraView: View {
     }
 }
 
-// ENHANCED CAMERA MANAGER - Replace your CameraManager with this
+// ENHANCED CAMERA MANAGER - SINGLETON (persists across views!)
 
 class CameraManager: NSObject, ObservableObject {
+    // Singleton instance - shared across all views
+    static let shared = CameraManager()
+    
     @Published var isAuthorized = false
     @Published var session = AVCaptureSession()
     @Published var isSessionRunning = false
@@ -588,9 +595,10 @@ class CameraManager: NSObject, ObservableObject {
     private var currentPhotoDelegate: PhotoCaptureDelegate?
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
     
-    override init() {
+    // Private init to enforce singleton
+    private override init() {
         super.init()
-        print("🎬 ========== CameraManager INIT ==========")
+        print("🎬 ========== CameraManager SINGLETON INIT (only happens once!) ==========")
         checkPermission()
     }
     
@@ -693,15 +701,15 @@ class CameraManager: NSObject, ObservableObject {
             return
         }
         
-        guard !session.isRunning else {
-            print("✅ Session already running")
-            DispatchQueue.main.async {
-                self.isSessionRunning = true
-            }
-            return
-        }
-        
+        // Don't guard on isRunning - always try to start for reliability
         sessionQueue.async {
+            if self.session.isRunning {
+                print("⚠️ Session already running - stopping first")
+                self.session.stopRunning()
+                // Brief pause to ensure clean stop
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            
             print("🎥 Starting session on background queue...")
             self.session.startRunning()
             let isRunning = self.session.isRunning
@@ -716,17 +724,21 @@ class CameraManager: NSObject, ObservableObject {
     
     func stopSession() {
         print("🛑 ========== STOP SESSION CALLED ==========")
-        guard session.isRunning else {
-            print("⚠️ Session not running - nothing to stop")
-            return
-        }
+        print("   - isRunning before: \(session.isRunning)")
         
+        // Always try to stop, even if we think it's not running
         sessionQueue.async {
-            print("🛑 Stopping session...")
-            self.session.stopRunning()
+            if self.session.isRunning {
+                print("🛑 Stopping session...")
+                self.session.stopRunning()
+            } else {
+                print("🛑 Session already stopped")
+            }
+            
+            // Always update state to ensure consistency
             DispatchQueue.main.async {
                 self.isSessionRunning = false
-                print("✅ Session stopped")
+                print("✅ Session stopped, state updated")
             }
         }
     }
