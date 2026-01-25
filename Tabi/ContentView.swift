@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftUI
 import AVFoundation
 import UIKit
 
@@ -285,6 +286,7 @@ struct CameraView: View {
     @ObservedObject private var cameraManager = CameraManager.shared  // Use singleton!
     @State private var showingAnalysis = false
     @State private var capturedImage: UIImage?
+    @State private var hasAttemptedSetup = false  // Track if we've tried to setup
     
     init(medication: Medication, medicationManager: MedicationManager, isPresented: Binding<Bool>) {
         self.medication = medication
@@ -530,19 +532,27 @@ struct CameraView: View {
             print("📱 isSetup: \(cameraManager.isSetup)")
             print("📱 isRunning: \(cameraManager.isSessionRunning)")
             
-            if cameraManager.isAuthorized {
-                print("📱 Already authorized - starting session")
-                // Since camera manager persists, just start the session
-                cameraManager.startSession()
-            } else {
-                print("📱 Not authorized yet - checking permission")
-                cameraManager.checkPermission()
+            // Always check permission status
+            cameraManager.checkPermission()
+            
+            // If already authorized, proceed immediately
+            if cameraManager.isAuthorized && !hasAttemptedSetup {
+                print("📱 Already authorized on appear - setting up")
+                setupAndStartCamera()
+            }
+        }
+        .onChange(of: cameraManager.isAuthorized) { newValue in
+            print("📱 ========== isAuthorized CHANGED to: \(newValue) ==========")
+            if newValue && !hasAttemptedSetup {
+                print("📱 Authorization granted - setting up camera")
+                setupAndStartCamera()
             }
         }
         .onDisappear {
             print("📱 ========== CameraView DISAPPEARED ==========")
             print("📱 Stopping session (CameraManager persists)")
             cameraManager.stopSession()
+            hasAttemptedSetup = false  // Reset for next time
         }
         .sheet(isPresented: $showingAnalysis) {
             if let image = capturedImage {
@@ -563,6 +573,22 @@ struct CameraView: View {
                         isPresented = false
                     }
                 )
+            }
+        }
+    }
+    
+    func setupAndStartCamera() {
+        print("📱 ========== setupAndStartCamera CALLED ==========")
+        hasAttemptedSetup = true
+        
+        if cameraManager.isSetup {
+            print("📱 Already setup - just starting session")
+            cameraManager.startSession()
+        } else {
+            print("📱 Not setup yet - setting up then starting")
+            cameraManager.setupSession {
+                print("📱 Setup completed - now starting session")
+                self.cameraManager.startSession()
             }
         }
     }
@@ -599,7 +625,14 @@ class CameraManager: NSObject, ObservableObject {
     private override init() {
         super.init()
         print("🎬 ========== CameraManager SINGLETON INIT (only happens once!) ==========")
-        checkPermission()
+        // DON'T call checkPermission here - let the view control the lifecycle
+        // Just check the permission status and update the published property
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        print("🔐 Initial camera permission status: \(status.rawValue)")
+        DispatchQueue.main.async {
+            self.isAuthorized = (status == .authorized)
+            print("🔐 Initial isAuthorized set to: \(self.isAuthorized)")
+        }
     }
     
     func checkPermission() {
@@ -612,8 +645,8 @@ class CameraManager: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self.isAuthorized = true
             }
-            print("🔧 Calling setupSession from checkPermission")
-            setupSession()
+            // DON'T auto-setup here - let the caller handle it
+            print("✅ Permission check complete - caller should handle setup/start")
         case .notDetermined:
             print("❓ Camera permission NOT DETERMINED - will request")
             requestPermission()
@@ -641,12 +674,8 @@ class CameraManager: NSObject, ObservableObject {
             print("🔐 Permission result: \(granted ? "✅ GRANTED" : "❌ DENIED")")
             DispatchQueue.main.async {
                 self.isAuthorized = granted
-            }
-            if granted {
-                self.setupSession()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.startSession()
-                }
+                // Let the view's onChange handler take care of setup/start
+                print("🔐 Published isAuthorized updated - view should react via onChange")
             }
         }
     }
@@ -668,10 +697,8 @@ class CameraManager: NSObject, ObservableObject {
         
         if !isSetup {
             print("🔧 Not setup - calling setupSession")
-            setupSession()
-            // Wait for setup to complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                print("🔧 After setup delay, calling startSession")
+            setupSession {
+                print("✅ Setup completed in forceSetupAndStart - now starting session")
                 self.startSession()
             }
         } else {
@@ -685,6 +712,7 @@ class CameraManager: NSObject, ObservableObject {
         print("   - isAuthorized: \(isAuthorized)")
         print("   - isSetup: \(isSetup)")
         print("   - isRunning: \(session.isRunning)")
+        print("   - Published isSessionRunning: \(isSessionRunning)")
         
         guard isAuthorized else {
             print("❌ Cannot start - not authorized")
@@ -693,27 +721,48 @@ class CameraManager: NSObject, ObservableObject {
         
         if !isSetup {
             print("⚠️ Not setup yet - calling setupSession first")
-            setupSession()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                print("⏰ Retry startSession after setup")
+            setupSession {
+                print("✅ Setup completed in startSession - now starting")
                 self.startSession()
             }
             return
         }
         
-        // Don't guard on isRunning - always try to start for reliability
         sessionQueue.async {
+            // Always check the actual session state, not just our published property
             if self.session.isRunning {
-                print("⚠️ Session already running - stopping first")
+                print("⚠️ Session already running - stopping first for clean restart")
                 self.session.stopRunning()
                 // Brief pause to ensure clean stop
-                Thread.sleep(forTimeInterval: 0.1)
+                Thread.sleep(forTimeInterval: 0.2)
             }
             
             print("🎥 Starting session on background queue...")
+            print("   - Inputs before start: \(self.session.inputs.count)")
+            print("   - Outputs before start: \(self.session.outputs.count)")
+            
             self.session.startRunning()
+            
+            // Small delay to let the session actually start
+            Thread.sleep(forTimeInterval: 0.1)
+            
             let isRunning = self.session.isRunning
             print("🎥 Session.startRunning() completed. isRunning: \(isRunning)")
+            
+            if !isRunning {
+                print("❌ WARNING: Session failed to start! Debugging info:")
+                print("   - Inputs: \(self.session.inputs.count)")
+                print("   - Outputs: \(self.session.outputs.count)")
+                print("   - Preset: \(self.session.sessionPreset.rawValue)")
+                
+                // Try to diagnose the issue
+                if self.session.inputs.isEmpty {
+                    print("❌ PROBLEM: No inputs configured!")
+                }
+                if self.session.outputs.isEmpty {
+                    print("❌ PROBLEM: No outputs configured!")
+                }
+            }
             
             DispatchQueue.main.async {
                 self.isSessionRunning = isRunning
@@ -725,12 +774,19 @@ class CameraManager: NSObject, ObservableObject {
     func stopSession() {
         print("🛑 ========== STOP SESSION CALLED ==========")
         print("   - isRunning before: \(session.isRunning)")
+        print("   - Published isSessionRunning before: \(isSessionRunning)")
         
         // Always try to stop, even if we think it's not running
         sessionQueue.async {
             if self.session.isRunning {
                 print("🛑 Stopping session...")
                 self.session.stopRunning()
+                
+                // Wait a bit to ensure it's fully stopped
+                Thread.sleep(forTimeInterval: 0.2)
+                
+                let stillRunning = self.session.isRunning
+                print("🛑 After stop, isRunning: \(stillRunning)")
             } else {
                 print("🛑 Session already stopped")
             }
@@ -738,16 +794,20 @@ class CameraManager: NSObject, ObservableObject {
             // Always update state to ensure consistency
             DispatchQueue.main.async {
                 self.isSessionRunning = false
-                print("✅ Session stopped, state updated")
+                print("✅ Session stopped, published state updated to false")
             }
         }
     }
     
-    private func setupSession() {
+    func setupSession(completion: (() -> Void)? = nil) {
         print("⚙️ ========== SETUP SESSION CALLED ==========")
         
         if isSetup {
-            print("⚠️ Already setup - skipping")
+            print("⚠️ Already setup - calling completion immediately on main thread")
+            // Important: Call completion on main thread asynchronously to maintain consistency
+            DispatchQueue.main.async {
+                completion?()
+            }
             return
         }
         
@@ -758,6 +818,16 @@ class CameraManager: NSObject, ObservableObject {
         
         sessionQueue.async {
             print("⚙️ Setting up session on background queue...")
+            
+            // Remove any existing inputs/outputs to start fresh
+            for input in self.session.inputs {
+                self.session.removeInput(input)
+                print("🗑️ Removed existing input")
+            }
+            for output in self.session.outputs {
+                self.session.removeOutput(output)
+                print("🗑️ Removed existing output")
+            }
             
             self.session.beginConfiguration()
             print("⚙️ Session configuration began")
@@ -824,6 +894,9 @@ class CameraManager: NSObject, ObservableObject {
                 self.isSetup = true
                 print("✅ Published isSetup updated to: true")
                 print("⚙️ ========== SETUP COMPLETE ==========")
+                
+                // Call completion handler after state is updated
+                completion?()
             }
         }
     }
