@@ -1,0 +1,64 @@
+# =========================
+# Xcode
+# =========================
+
+# User-specific settings
+**/xcuserdata/
+**/*.xcuserdatad/
+**/*.xcuserstate
+
+# Workspace user data
+*.xcworkspace/xcuserdata/
+
+# Build products
+build/
+DerivedData/
+
+# Index / build artifacts
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.dSYM.tar.gz
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/package.xcworkspace/
+
+# CocoaPods
+Pods/
+!Podfile
+!Podfile.lock
+
+# Carthage
+Carthage/Build/
+
+# Accidental Xcode backups
+*~.nib
+*.swp
+*.lock
+
+# =========================
+# macOS
+# =========================
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# =========================
+# Logs & temp files
+# =========================
+*.log
+tmp/
+
+# =========================
+# Secrets / local configs
+# =========================
+*.env
+*.env.local
+*.env.*.local
+
+# Optional: local-only configs
+*.xcconfig
+!Shared.xcconfig
+
