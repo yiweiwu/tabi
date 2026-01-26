@@ -74,6 +74,16 @@ struct Achievement: Identifiable, Codable {
     let earnedDate: Date?
 }
 
+// MARK: - Detected Medication Info
+
+struct DetectedMedicationInfo {
+    var medicationName: String
+    var schedule: String  // e.g., "Take 1 tablet daily", "Twice daily"
+    var dosage: String    // e.g., "5-325 MG", "100 MG"
+    var scheduleTime: Date  // Extracted or default time
+    var allDetectedText: [String]
+}
+
 // MARK: - Medication Manager (Data Layer)
 
 class MedicationManager: ObservableObject {
@@ -87,7 +97,7 @@ class MedicationManager: ObservableObject {
     func loadSampleData() {
         medications = [
             Medication(name: "Vitamin D", emoji: "💊", dosageTime: createTime(hour: 9), points: 10),
-            Medication(name: "Doxycycline Hyclate", emoji: "🩺", dosageTime: createTime(hour: 14), points: 15)
+            Medication(name: "Hydrocodone Acetaminophen", emoji: "🩺", dosageTime: createTime(hour: 14), points: 15)
         ]
         
         gameStats = GameStats(
@@ -133,11 +143,11 @@ class MedicationManager: ObservableObject {
     }
 }
 
-// MARK: - Today View (FIXED!)
+// MARK: - Today View
 
 struct TodayView: View {
     @ObservedObject var medicationManager: MedicationManager
-    @State private var cameraSheetMedication: Medication? = nil
+    @State private var showingAddMedicationCamera = false
     
     var body: some View {
         NavigationView {
@@ -149,13 +159,20 @@ struct TodayView: View {
                 ScrollView {
                     LazyVStack(spacing: 16) {
                         ForEach(medicationManager.medications) { medication in
-                            MedicationCard(
+                            SavedMedicationCard(
                                 medication: medication,
-                                onTakePhoto: {
-                                    print("📸 Opening camera for: \(medication.name)")
-                                    cameraSheetMedication = medication
+                                onTake: {
+                                    medicationManager.recordMedicationTaken(medication, points: medication.points)
+                                },
+                                onSkip: {
+                                    print("⏭️ Skipped: \(medication.name)")
                                 }
                             )
+                        }
+                        
+                        // Add new medication button
+                        AddMedicationButton {
+                            showingAddMedicationCamera = true
                         }
                     }
                     .padding()
@@ -163,14 +180,10 @@ struct TodayView: View {
             }
             .navigationTitle("PillQuest")
         }
-        .fullScreenCover(item: $cameraSheetMedication) { medication in
-            CameraView(
-                medication: medication,
+        .fullScreenCover(isPresented: $showingAddMedicationCamera) {
+            NewMedicationCameraView(
                 medicationManager: medicationManager,
-                isPresented: Binding(
-                    get: { cameraSheetMedication != nil },
-                    set: { if !$0 { cameraSheetMedication = nil } }
-                )
+                isPresented: $showingAddMedicationCamera
             )
         }
     }
@@ -232,16 +245,17 @@ struct StatItem: View {
     }
 }
 
-// MARK: - Medication Card
+// MARK: - Saved Medication Card (Simple Take/Skip)
 
-struct MedicationCard: View {
+struct SavedMedicationCard: View {
     let medication: Medication
-    let onTakePhoto: () -> Void
+    let onTake: () -> Void
+    let onSkip: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("\(medication.emoji) \(medication.name)")
                         .font(.headline)
                         .foregroundColor(.primary)
@@ -249,30 +263,56 @@ struct MedicationCard: View {
                     Text("Next dose: \(medication.dosageTime, style: .time)")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                    
+                    if medication.streak > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "flame.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text("\(medication.streak) day streak")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
                 }
                 Spacer()
             }
             
-            Button(action: onTakePhoto) {
-                HStack {
-                    Image(systemName: "camera.fill")
-                    Text("Take Photo & Verify")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: [Color.red, Color.red.opacity(0.8)]),
-                        startPoint: .leading,
-                        endPoint: .trailing
+            HStack(spacing: 12) {
+                Button(action: onTake) {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("Take")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.green, Color.green.opacity(0.8)]),
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
                     )
-                )
-                .foregroundColor(.white)
-                .cornerRadius(12)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+                
+                Button(action: onSkip) {
+                    HStack {
+                        Image(systemName: "forward.fill")
+                        Text("Skip")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.gray.opacity(0.2))
+                    .foregroundColor(.primary)
+                    .cornerRadius(12)
+                }
             }
             
-            Text("✨ +\(medication.points) points for on-time dose")
+            Text("✨ +\(medication.points) points")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -283,7 +323,271 @@ struct MedicationCard: View {
     }
 }
 
-// ENHANCED CAMERA VIEW - Replace your CameraView with this
+// MARK: - Add Medication Button
+
+struct AddMedicationButton: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(.blue)
+                
+                Text("Add New Medication")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text("Take a photo of your prescription label")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 32)
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.blue.opacity(0.3), style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - New Medication Camera View (For detecting new medications)
+
+struct NewMedicationCameraView: View {
+    @ObservedObject var medicationManager: MedicationManager
+    @Binding var isPresented: Bool
+    @ObservedObject private var cameraManager = CameraManager.shared
+    @State private var showingDetectionResult = false
+    @State private var capturedImage: UIImage?
+    @State private var detectedInfo: DetectedMedicationInfo?
+    @State private var hasAttemptedSetup = false  // Track if we've tried to setup
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            if cameraManager.isAuthorized {
+                CameraPreviewView(cameraManager: cameraManager)
+                    .ignoresSafeArea()
+                
+                VStack {
+                    // Top header
+                    HStack {
+                        Button(action: {
+                            isPresented = false
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.title2)
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Circle())
+                        }
+                        
+                        Spacer()
+                        
+                        VStack {
+                            Text("Scan Prescription Label")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text("Position label in center")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        
+                        Spacer()
+                        
+                        Circle()
+                            .fill(Color.clear)
+                            .frame(width: 44, height: 44)
+                    }
+                    .padding()
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.black.opacity(0.7), Color.clear]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    
+                    Spacer()
+                    
+                    // Center overlay guide
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.8), style: StrokeStyle(lineWidth: 3, dash: [10, 5]))
+                        .frame(width: 300, height: 200)
+                        .overlay(
+                            VStack(spacing: 8) {
+                                Image(systemName: "doc.text.viewfinder")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.white.opacity(0.7))
+                                Text("Position label here")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                        )
+                    
+                    Spacer()
+                    
+                    // Bottom controls
+                    Button(action: capturePhoto) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 80, height: 80)
+                            
+                            Circle()
+                                .stroke(Color.white, lineWidth: 6)
+                                .frame(width: 100, height: 100)
+                        }
+                    }
+                    .padding(.bottom, 50)
+                }
+            } else {
+                // Camera permission request (same as before)
+                VStack(spacing: 30) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.white.opacity(0.7))
+                    
+                    VStack(spacing: 16) {
+                        Text("Camera Access Required")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        
+                        Text("PillQuest needs camera access to scan your medication labels.")
+                            .font(.body)
+                            .foregroundColor(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
+                    
+                    Button("Enable Camera") {
+                        cameraManager.requestPermission()
+                    }
+                    .font(.headline)
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(12)
+                    .padding(.horizontal, 32)
+                }
+            }
+        }
+        .onAppear {
+            print("📱 ========== NewMedicationCameraView APPEARED ==========")
+            print("📱 isAuthorized: \(cameraManager.isAuthorized)")
+            print("📱 isSetup: \(cameraManager.isSetup)")
+            print("📱 isRunning: \(cameraManager.isSessionRunning)")
+            
+            // Always check permission status
+            cameraManager.checkPermission()
+            
+            // If already authorized, proceed immediately
+            if cameraManager.isAuthorized && !hasAttemptedSetup {
+                print("📱 Already authorized on appear - setting up")
+                setupAndStartCamera()
+            }
+        }
+        .onChange(of: cameraManager.isAuthorized) { oldValue, newValue in
+            print("📱 ========== isAuthorized CHANGED to: \(newValue) ==========")
+            if newValue && !hasAttemptedSetup {
+                print("📱 Authorization granted - setting up camera")
+                setupAndStartCamera()
+            }
+        }
+        .onDisappear {
+            print("📱 ========== NewMedicationCameraView DISAPPEARED ==========")
+            cameraManager.stopSession()
+            hasAttemptedSetup = false  // Reset for next time
+        }
+        .sheet(isPresented: $showingDetectionResult) {
+            if let image = capturedImage, let info = detectedInfo {
+                DetectedMedicationView(
+                    image: image,
+                    detectedInfo: info,
+                    onSave: { finalInfo in
+                        // Save to medication manager
+                        let newMedication = Medication(
+                            name: finalInfo.medicationName,
+                            emoji: "💊",
+                            dosageTime: finalInfo.scheduleTime,
+                            points: 15
+                        )
+                        medicationManager.medications.append(newMedication)
+                        showingDetectionResult = false
+                        isPresented = false
+                    },
+                    onCancel: {
+                        showingDetectionResult = false
+                    }
+                )
+            }
+        }
+    }
+    
+    func setupAndStartCamera() {
+        print("📱 ========== setupAndStartCamera CALLED ==========")
+        hasAttemptedSetup = true
+        
+        if cameraManager.isSetup {
+            print("📱 Already setup - just starting session")
+            cameraManager.startSession()
+        } else {
+            print("📱 Not setup yet - setting up then starting")
+            cameraManager.setupSession {
+                print("📱 Setup completed - now starting session")
+                self.cameraManager.startSession()
+            }
+        }
+    }
+    
+    func capturePhoto() {
+        print("📸 Capturing medication label...")
+        
+        // Capture photo FIRST while camera is still running
+        cameraManager.capturePhoto { image in
+            // Stop the camera session AFTER capture
+            self.cameraManager.stopSession()
+            
+            if let image = image {
+                print("📸 Photo captured - detecting medication info...")
+                
+                // Detect medication information from the label
+                MedicationAnalyzer.shared.detectMedicationFromLabel(image: image) { info in
+                    print("✅ Detection complete:")
+                    print("   - Name: \(info.medicationName)")
+                    print("   - Schedule: \(info.schedule)")
+                    print("   - Dosage: \(info.dosage)")
+                    
+                    // Update state on main thread
+                    DispatchQueue.main.async {
+                        self.capturedImage = image
+                        self.detectedInfo = info
+                        self.showingDetectionResult = true
+                        print("✅ Sheet should present now")
+                    }
+                }
+            } else {
+                // If capture failed, restart the camera
+                print("❌ Photo capture failed - restarting camera")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.cameraManager.startSession()
+                }
+            }
+        }
+    }
+}
+
+// OLD CAMERA VIEW - Replace your CameraView with this
 
 struct CameraView: View {
     let medication: Medication
@@ -1041,6 +1345,264 @@ class MedicationAnalyzer {
     }
     
     func analyzePill(image: UIImage, expectedMedication: Medication, completion: @escaping (AnalysisResult) -> Void) {
+        // Old verification method - keeping for compatibility
+        guard let cgImage = image.cgImage else {
+            completion(AnalysisResult(
+                isMatch: false,
+                confidence: 0.0,
+                detectedText: [],
+                colorProfile: "unknown",
+                shapeDetected: false,
+                validMedicationDetected: false,
+                matchedTerms: []
+            ))
+            return
+        }
+        
+        var detectedTexts: [String] = []
+        var hasShape = false
+        
+        let dispatchGroup = DispatchGroup()
+        
+        dispatchGroup.enter()
+        recognizeText(in: cgImage) { texts in
+            detectedTexts = texts
+            dispatchGroup.leave()
+        }
+        
+        dispatchGroup.enter()
+        detectPillShape(in: cgImage) { detected in
+            hasShape = detected
+            dispatchGroup.leave()
+        }
+        
+        dispatchGroup.notify(queue: .main) {
+            let colorProfile = self.analyzeColor(image: image)
+            let validationResult = self.validateMedicationText(
+                detectedTexts: detectedTexts,
+                expectedMedication: expectedMedication
+            )
+            
+            let confidence = self.calculateConfidence(
+                textMatch: validationResult.isMatch,
+                hasShape: hasShape,
+                colorProfile: colorProfile,
+                hasValidMedTerms: validationResult.hasValidTerms
+            )
+            
+            let result = AnalysisResult(
+                isMatch: confidence > 0.5,
+                confidence: confidence,
+                detectedText: detectedTexts,
+                colorProfile: colorProfile,
+                shapeDetected: hasShape,
+                validMedicationDetected: validationResult.hasValidTerms,
+                matchedTerms: validationResult.matchedTerms
+            )
+            
+            completion(result)
+        }
+    }
+    
+    // NEW: Detect medication info from prescription label
+    func detectMedicationFromLabel(image: UIImage, completion: @escaping (DetectedMedicationInfo) -> Void) {
+        guard let cgImage = image.cgImage else {
+            completion(DetectedMedicationInfo(
+                medicationName: "Unknown Medication",
+                schedule: "Daily",
+                dosage: "Unknown",
+                scheduleTime: Date(),
+                allDetectedText: []
+            ))
+            return
+        }
+        
+        recognizeText(in: cgImage) { detectedTexts in
+            print("📝 Detected texts from label:")
+            detectedTexts.forEach { print("  - \($0)") }
+            
+            // Extract medication name and schedule
+            let info = self.extractMedicationInfo(from: detectedTexts)
+            completion(info)
+        }
+    }
+    
+    private func extractMedicationInfo(from texts: [String]) -> DetectedMedicationInfo {
+        var medicationName = "Unknown Medication"
+        var schedule = "Take as directed"
+        var dosage = ""
+        var scheduleTime = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
+        
+        // Common medication name patterns (case-insensitive partial matches)
+        let medicationKeywords = [
+            "hydrocodone", "acetaminophen", "acetamin",  // Added "acetamin" for truncated versions
+            "doxycycline", "vitamin", "ibuprofen", "amoxicillin",
+            "lisinopril", "metformin", "atorvastatin", "omeprazole"
+        ]
+        
+        // Dosage patterns
+        let dosagePattern = /(\d+[-\s]?\d*\s*(MG|MCG|mg|mcg))/
+        
+        // Schedule patterns
+        let scheduleKeywords = ["daily", "twice", "once", "every", "morning", "evening", "night", "take"]
+        
+        // STEP 1: Find dosage first (this is usually very reliable)
+        var dosageIndex: Int?
+        for (index, text) in texts.enumerated() {
+            if let match = text.firstMatch(of: dosagePattern) {
+                dosage = String(match.0)
+                dosageIndex = index
+                print("✅ Found dosage at index \(index): \(dosage)")
+                break
+            }
+        }
+        
+        // STEP 2: Look for medication name near the dosage (usually 1-3 lines before)
+        if let dosageIdx = dosageIndex {
+            // Check the 3 lines before dosage for medication name
+            let searchRange = max(0, dosageIdx - 3)..<dosageIdx
+            
+            for index in searchRange.reversed() {
+                let text = texts[index]
+                let lowerText = text.lowercased()
+                
+                // Check if this line contains medication keywords
+                for keyword in medicationKeywords {
+                    if lowerText.contains(keyword) {
+                        // Found a medication keyword!
+                        // Check if the next line also contains medication keywords (multi-line name)
+                        var fullName = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        
+                        // Look ahead one line to see if it's a continuation
+                        if index + 1 < texts.count && index + 1 < dosageIdx {
+                            let nextLine = texts[index + 1]
+                            let nextLowerText = nextLine.lowercased()
+                            
+                            // If next line also contains medication keywords, combine them
+                            for nextKeyword in medicationKeywords {
+                                if nextLowerText.contains(nextKeyword) {
+                                    fullName += " " + nextLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    print("📋 Combined multi-line medication name")
+                                    break
+                                }
+                            }
+                        }
+                        
+                        // Clean up the medication name
+                        medicationName = fullName
+                            .replacingOccurrences(of: "-\n", with: "")  // Remove line-break hyphens
+                            .replacingOccurrences(of: "\n", with: " ")  // Replace newlines with spaces
+                            .trimmingCharacters(in: .punctuationCharacters)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        
+                        // Capitalize properly (title case)
+                        medicationName = medicationName
+                            .split(separator: " ")
+                            .map { word in
+                                let lower = word.lowercased()
+                                return lower == "and" || lower == "with" ? lower : word.capitalized
+                            }
+                            .joined(separator: " ")
+                        
+                        print("✅ Found medication name near dosage: \(medicationName)")
+                        break
+                    }
+                }
+                
+                if medicationName != "Unknown Medication" {
+                    break
+                }
+            }
+        }
+        
+        // STEP 3: Fallback - look in first 5 lines if we didn't find it near dosage
+        if medicationName == "Unknown Medication" {
+            print("⚠️ Fallback: searching first 5 lines for medication name")
+            
+            for (index, text) in texts.enumerated() where index < 5 {
+                let lowerText = text.lowercased()
+                
+                for keyword in medicationKeywords {
+                    if lowerText.contains(keyword) {
+                        // Found potential medication name
+                        var fullName = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        
+                        // Check if next line is a continuation
+                        if index + 1 < min(texts.count, 5) {
+                            let nextLine = texts[index + 1]
+                            let nextLowerText = nextLine.lowercased()
+                            
+                            for nextKeyword in medicationKeywords {
+                                if nextLowerText.contains(nextKeyword) {
+                                    fullName += " " + nextLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    break
+                                }
+                            }
+                        }
+                        
+                        medicationName = fullName
+                            .replacingOccurrences(of: "-\n", with: "")
+                            .replacingOccurrences(of: "\n", with: " ")
+                            .trimmingCharacters(in: .punctuationCharacters)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        
+                        // Capitalize properly
+                        medicationName = medicationName
+                            .split(separator: " ")
+                            .map { word in
+                                let lower = word.lowercased()
+                                return lower == "and" || lower == "with" ? lower : word.capitalized
+                            }
+                            .joined(separator: " ")
+                        
+                        print("✅ Found medication name (fallback): \(medicationName)")
+                        break
+                    }
+                }
+                
+                if medicationName != "Unknown Medication" {
+                    break
+                }
+            }
+        }
+        
+        // STEP 4: Extract schedule
+        for text in texts {
+            let lowerText = text.lowercased()
+            
+            for keyword in scheduleKeywords {
+                if lowerText.contains(keyword) {
+                    schedule = text
+                    print("✅ Found schedule: \(schedule)")
+                    
+                    // Try to extract time
+                    if lowerText.contains("morning") {
+                        scheduleTime = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date()) ?? Date()
+                    } else if lowerText.contains("evening") || lowerText.contains("night") {
+                        scheduleTime = Calendar.current.date(bySettingHour: 20, minute: 0, second: 0, of: Date()) ?? Date()
+                    } else if lowerText.contains("twice") {
+                        scheduleTime = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date()
+                    }
+                    break
+                }
+            }
+        }
+        
+        print("📊 Final extraction results:")
+        print("   - Medication: \(medicationName)")
+        print("   - Dosage: \(dosage)")
+        print("   - Schedule: \(schedule)")
+        
+        return DetectedMedicationInfo(
+            medicationName: medicationName,
+            schedule: schedule,
+            dosage: dosage,
+            scheduleTime: scheduleTime,
+            allDetectedText: texts
+        )
+    }
+    
+    func analyzePill_old(image: UIImage, expectedMedication: Medication, completion: @escaping (AnalysisResult) -> Void) {
         guard let cgImage = image.cgImage else {
             completion(AnalysisResult(
                 isMatch: false,
@@ -1105,113 +1667,206 @@ class MedicationAnalyzer {
     }
     
     private func validateMedicationText(detectedTexts: [String], expectedMedication: Medication) -> (isMatch: Bool, hasValidTerms: Bool, matchedTerms: [String]) {
-        let medKeywords = [
-            "mg", "mcg", "tablet", "capsule", "pill", "dose",
-            "rx", "vitamin", "daily", "once", "twice", "extended"
-        ]
+        // Keywords that indicate medication-related text
+        let medKeywords = ["mg", "mcg", "tablet", "capsule", "pill", "dose", "rx", "vitamin", "daily", "once", "twice", "take"]
         
         var matchedTerms: [String] = []
         var hasValidTerms = false
         var isExactMatch = false
         
-        // Combine all detected text for analysis
+        // Combine all detected text for medication name matching
         let allText = detectedTexts.joined(separator: " ").lowercased()
         let expectedName = expectedMedication.name.lowercased()
         
-        // Split medication name into individual words for multi-word matching
+        // Extract medication name words for matching (keep all words, even short ones initially)
         let medicationWords = expectedName
             .components(separatedBy: .whitespacesAndNewlines)
             .map { $0.trimmingCharacters(in: .punctuationCharacters) }
-            .filter { $0.count > 2 } // Filter out short words like "mg", "d", etc.
+            .filter { $0.count > 2 } // Skip short words like "mg", "d"
         
-        print("🔍 Medication words to match: \(medicationWords)")
-        print("🔍 All detected text: \(allText)")
+        print("🔍 Looking for medication: \(expectedName)")
+        print("🔍 Key words: \(medicationWords)")
         
-        // Categorize detected text by likelihood of being a pill imprint
-        struct ScoredText {
-            let text: String
-            let score: Int
-            let matchReason: String
+        // Helper function for fuzzy matching (handles OCR errors)
+        func fuzzyMatch(_ word1: String, _ word2: String) -> Bool {
+            let w1 = word1.lowercased().trimmingCharacters(in: .punctuationCharacters)
+            let w2 = word2.lowercased().trimmingCharacters(in: .punctuationCharacters)
+            
+            // Exact match
+            if w1 == w2 { return true }
+            
+            // One contains the other (handles substring matches)
+            if w1.contains(w2) || w2.contains(w1) { return true }
+            
+            // Check if they share a significant prefix (handles truncation/OCR errors)
+            let minLength = min(w1.count, w2.count)
+            if minLength >= 4 { // Lowered from 5 to catch shorter matches
+                let prefixLength = min(minLength, 7) // Check up to 7 chars
+                if w1.prefix(prefixLength) == w2.prefix(prefixLength) {
+                    print("   🔍 Prefix match: '\(w1.prefix(prefixLength))' == '\(w2.prefix(prefixLength))'")
+                    return true
+                }
+            }
+            
+            // Calculate similarity ratio for very close matches
+            let similarity = stringSimilarity(w1, w2)
+            if similarity > 0.75 { // 75% similar
+                print("   🔍 Similarity match: \(Int(similarity * 100))% similar")
+                return true
+            }
+            
+            return false
         }
         
-        var scoredTexts: [ScoredText] = []
+        // Levenshtein distance-based similarity
+        func stringSimilarity(_ s1: String, _ s2: String) -> Double {
+            let longer = s1.count > s2.count ? s1 : s2
+            let shorter = s1.count > s2.count ? s2 : s1
+            
+            if longer.count == 0 { return 1.0 }
+            
+            let editDistance = levenshteinDistance(Array(shorter), Array(longer))
+            return (Double(longer.count) - Double(editDistance)) / Double(longer.count)
+        }
         
-        // Score each detected text
+        // Calculate Levenshtein distance
+        func levenshteinDistance(_ s1: [Character], _ s2: [Character]) -> Int {
+            let m = s1.count
+            let n = s2.count
+            
+            var matrix = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
+            
+            for i in 0...m { matrix[i][0] = i }
+            for j in 0...n { matrix[0][j] = j }
+            
+            for i in 1...m {
+                for j in 1...n {
+                    let cost = s1[i-1] == s2[j-1] ? 0 : 1
+                    matrix[i][j] = min(
+                        matrix[i-1][j] + 1,      // deletion
+                        matrix[i][j-1] + 1,      // insertion
+                        matrix[i-1][j-1] + cost  // substitution
+                    )
+                }
+            }
+            
+            return matrix[m][n]
+        }
+        
+        // Check for medication name match (with fuzzy matching for OCR errors)
+        for medWord in medicationWords {
+            // Check in combined text
+            if allText.contains(medWord) {
+                isExactMatch = true
+                print("✅ Found exact medication word: '\(medWord)'")
+                break
+            }
+            
+            // Check each detected text with fuzzy matching
+            for detectedText in detectedTexts {
+                let detectedWords = detectedText.lowercased()
+                    .components(separatedBy: .whitespacesAndNewlines)
+                    .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+                
+                for detectedWord in detectedWords {
+                    if fuzzyMatch(medWord, detectedWord) {
+                        isExactMatch = true
+                        print("✅ Fuzzy matched '\(medWord)' with detected '\(detectedWord)'")
+                        break
+                    }
+                }
+                if isExactMatch { break }
+            }
+            if isExactMatch { break }
+        }
+        
+        // Find the most relevant text snippets (prioritize medication-related content)
         for text in detectedTexts {
-            var score = 0
-            var reasons: [String] = []
             let lowerText = text.lowercased()
+            let textWords = lowerText.components(separatedBy: .whitespacesAndNewlines)
+                .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+            var isRelevant = false
             
-            // Check if contains medication name - HIGHEST PRIORITY
-            let containsMedWord = medicationWords.contains { lowerText.contains($0) }
-            if containsMedWord {
-                score += 20 // Highest priority - always show medication name
-                reasons.append("contains med name")
-                isExactMatch = true
+            // Priority 1: Contains medication name (exact or fuzzy match)
+            for medWord in medicationWords {
+                if lowerText.contains(medWord) {
+                    isRelevant = true
+                    print("📌 Medication name found in: '\(text)'")
+                    break
+                }
+                
+                // Fuzzy match check
+                for textWord in textWords {
+                    if fuzzyMatch(medWord, textWord) {
+                        isRelevant = true
+                        print("📌 Medication name (fuzzy) found in: '\(text)'")
+                        break
+                    }
+                }
+                if isRelevant { break }
             }
             
-            // Check for exact match
-            if lowerText.contains(expectedName) {
-                score += 25 // Even higher for exact match
-                reasons.append("exact match")
-                isExactMatch = true
-            }
-            
-            // Contains medication keywords
-            let containsKeyword = medKeywords.contains { lowerText.contains($0) }
-            if containsKeyword {
-                score += 8
-                reasons.append("has med keyword")
+            // Priority 2: Contains medication keywords (dosage, instructions, etc.)
+            if !isRelevant && medKeywords.contains(where: { lowerText.contains($0) }) {
+                isRelevant = true
                 hasValidTerms = true
+                print("💊 Medication keyword found in: '\(text)'")
             }
             
-            // Pill imprints are usually short (under 20 characters)
-            if text.count < 20 {
-                score += 2
-                reasons.append("short")
-            }
-            
-            // Often contain numbers (like dosage)
-            if text.rangeOfCharacter(from: .decimalDigits) != nil {
-                score += 3
-                reasons.append("has numbers")
-            }
-            
-            // Often in all caps or mostly caps
-            let uppercaseCount = text.filter { $0.isUppercase }.count
-            if Double(uppercaseCount) / Double(text.count) > 0.7 {
-                score += 2
-                reasons.append("mostly caps")
-            }
-            
-            if score > 0 {
-                scoredTexts.append(ScoredText(text: text, score: score, matchReason: reasons.joined(separator: ", ")))
-                print("📊 Scored '\(text)': \(score) points (\(reasons.joined(separator: ", ")))")
+            if isRelevant {
+                matchedTerms.append(text)
             }
         }
         
-        // Sort by score (highest first) and take top 5 most relevant (increased from 3)
-        let topMatches = scoredTexts
-            .sorted { $0.score > $1.score }
-            .prefix(5)
+        // Deduplicate and keep only top 3 most relevant terms
+        matchedTerms = deduplicateMatchedTerms(matchedTerms)
+            .prefix(3)
+            .map { String($0) }
         
-        matchedTerms = topMatches.map { $0.text }
+        print("📊 Final matched terms: \(matchedTerms)")
+        print("📊 Match: \(isExactMatch), Valid terms: \(hasValidTerms)")
         
-        // Also check combined text for medication words if we haven't found a match
-        if !isExactMatch {
-            for medWord in medicationWords {
-                if allText.contains(medWord) {
-                    isExactMatch = true
-                    print("✅ Found medication word '\(medWord)' in combined text")
-                    break
+        return (isExactMatch, hasValidTerms, matchedTerms)
+    }
+    
+    private func deduplicateMatchedTerms(_ terms: [String]) -> [String] {
+        // Normalize a string by removing spaces, hyphens, punctuation, and converting to lowercase
+        func normalize(_ text: String) -> String {
+            return text.lowercased()
+                .replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: "-", with: "")
+                .components(separatedBy: CharacterSet.punctuationCharacters)
+                .joined()
+        }
+        
+        var uniqueTerms: [String] = []
+        var seenNormalized: Set<String> = []
+        
+        for term in terms {
+            let normalized = normalize(term)
+            
+            // Check if we've seen this normalized version
+            if !seenNormalized.contains(normalized) {
+                // Keep the version with the most formatting (spaces/hyphens)
+                // This prefers "5-235 MG" over "5-235MG" or "5235MG"
+                let formattingScore = term.filter { $0 == " " || $0 == "-" }.count
+                
+                // Check if there's a similar term already added
+                if let existingIndex = uniqueTerms.firstIndex(where: { normalize($0) == normalized }) {
+                    let existingScore = uniqueTerms[existingIndex].filter { $0 == " " || $0 == "-" }.count
+                    
+                    // Replace with better formatted version
+                    if formattingScore > existingScore {
+                        uniqueTerms[existingIndex] = term
+                    }
+                } else {
+                    uniqueTerms.append(term)
+                    seenNormalized.insert(normalized)
                 }
             }
         }
         
-        print("📊 Top matched terms: \(matchedTerms)")
-        print("📊 Validation result: isMatch=\(isExactMatch), hasValidTerms=\(hasValidTerms)")
-        
-        return (isExactMatch, hasValidTerms, matchedTerms)
+        return uniqueTerms
     }
     
     private func recognizeText(in image: CGImage, completion: @escaping ([String]) -> Void) {
@@ -1420,6 +2075,112 @@ class MedicationAnalyzer {
         if colorProfile != "unknown" { confidence += 0.1 }  // Color identified
         
         return min(confidence, 1.0)
+    }
+}
+
+// MARK: - Detected Medication View (Review & Confirm)
+
+struct DetectedMedicationView: View {
+    let image: UIImage
+    @State var detectedInfo: DetectedMedicationInfo
+    let onSave: (DetectedMedicationInfo) -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Captured image
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 200)
+                        .cornerRadius(12)
+                        .padding()
+                    
+                    VStack(spacing: 20) {
+                        // Medication Name
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Medication Name")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            TextField("e.g., Hydrocodone Acetaminophen", text: $detectedInfo.medicationName)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .font(.body)
+                        }
+                        
+                        // Dosage
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Dosage")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            TextField("e.g., 5-325 MG", text: $detectedInfo.dosage)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .font(.body)
+                        }
+                        
+                        // Schedule
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Schedule")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            TextField("e.g., Take 1 tablet daily", text: $detectedInfo.schedule)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .font(.body)
+                        }
+                        
+                        // All detected text (for reference)
+                        if !detectedInfo.allDetectedText.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("All Detected Text")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(detectedInfo.allDetectedText.prefix(8), id: \.self) { text in
+                                        Text("• \(text)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding()
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    // Action buttons
+                    VStack(spacing: 12) {
+                        Button(action: {
+                            onSave(detectedInfo)
+                        }) {
+                            Text("Save Medication")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .cornerRadius(12)
+                        }
+                        
+                        Button(action: onCancel) {
+                            Text("Cancel")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom)
+                }
+            }
+            .navigationTitle("Confirm Medication")
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 }
 
