@@ -4,6 +4,17 @@ import UIKit
 import Vision
 import UserNotifications
 
+// MARK: - App Entry Point
+
+@main
+struct TABIApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
 // MARK: - TABI Design System
 
 extension Color {
