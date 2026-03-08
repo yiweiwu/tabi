@@ -1,2 +1,0 @@
-# tabi
-iOS app

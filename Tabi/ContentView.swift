@@ -1436,7 +1436,8 @@ class MedicationAnalyzer {
         // Common medication name patterns (case-insensitive partial matches)
         let medicationKeywords = [
             "hydrocodone", "acetaminophen", "acetamin",  // Added "acetamin" for truncated versions
-            "doxycycline", "vitamin", "ibuprofen", "amoxicillin",
+            "doxycycline", "hyclate",  // Added "hyclate" for doxycycline hyclate
+            "vitamin", "ibuprofen", "amoxicillin",
             "lisinopril", "metformin", "atorvastatin", "omeprazole"
         ]
         
