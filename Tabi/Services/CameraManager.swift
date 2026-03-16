@@ -80,14 +80,17 @@ class CameraManager: NSObject, ObservableObject {
 
         sessionQueue.async {
             if self.session.isRunning {
-                self.session.stopRunning()
-                Thread.sleep(forTimeInterval: 0.2)
+                print("⚠️ Session already running, skipping start")
+                DispatchQueue.main.async {
+                    self.isSessionRunning = true
+                }
+                return
             }
             self.session.startRunning()
-            Thread.sleep(forTimeInterval: 0.1)
-            let isRunning = self.session.isRunning
-            print("🎥 Session.startRunning() completed. isRunning: \(isRunning)")
-            DispatchQueue.main.async {
+            // Give it a moment to actually start
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                let isRunning = self.session.isRunning
+                print("🎥 Session.startRunning() completed. isRunning: \(isRunning)")
                 self.isSessionRunning = isRunning
                 print("✅ Published isSessionRunning updated to: \(isRunning)")
             }
@@ -99,7 +102,6 @@ class CameraManager: NSObject, ObservableObject {
         sessionQueue.async {
             if self.session.isRunning {
                 self.session.stopRunning()
-                Thread.sleep(forTimeInterval: 0.2)
             }
             DispatchQueue.main.async {
                 self.isSessionRunning = false
@@ -182,7 +184,9 @@ struct CameraPreviewView: UIViewRepresentable {
 
         let previewLayer = AVCaptureVideoPreviewLayer(session: cameraManager.session)
         previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.connection?.videoOrientation = .portrait
+        if let connection = previewLayer.connection, connection.isVideoOrientationSupported {
+            connection.videoOrientation = .portrait
+        }
         view.layer.addSublayer(previewLayer)
 
         context.coordinator.previewLayer = previewLayer

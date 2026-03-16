@@ -45,7 +45,7 @@ struct ProfileView: View {
                     // Menu items
                     VStack(spacing: 0) {
                         let menuItems: [(String, String, String)] = [
-                            ("heart.text.square", "Drug Interactions/Safety", "Safety and Allergies"),
+                            ("heart.text.square", "Allergy Profile", "Safety and Allergies"),
                             ("cross.case",         "My Pharmacies",            ""),
                             ("gearshape",          "Setting",                  ""),
                         ]
