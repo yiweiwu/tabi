@@ -1,6 +1,10 @@
 import SwiftUI
 import PhotosUI
 import MapKit
+import UserNotifications
+import CoreLocation
+import LocalAuthentication
+import AVFoundation
 
 // MARK: - User Profile Model
 
@@ -273,6 +277,7 @@ struct ProfileView: View {
     @State private var showingEditSheet = false
     @State private var showingAllergyProfile = false
     @State private var showingPharmacies = false
+    @State private var showingSettings = false
 
     var body: some View {
         NavigationView {
@@ -433,7 +438,7 @@ struct ProfileView: View {
                         Divider().padding(.leading, 64)
                         
                         // Setting
-                        Button(action: {}) {
+                        Button(action: { showingSettings = true }) {
                             HStack(spacing: 12) {
                                 Circle().fill(Color.tabiLavLight).frame(width: 36, height: 36)
                                     .overlay(
@@ -442,7 +447,7 @@ struct ProfileView: View {
                                             .foregroundColor(.tabiLavender)
                                     )
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text("Setting").font(.subheadline.bold())
+                                    Text("Settings").font(.subheadline.bold())
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right")
@@ -469,6 +474,9 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showingPharmacies) {
                 PharmaciesView(pharmacyManager: pharmacyManager)
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView(medicationManager: medicationManager)
             }
         }
     }
@@ -2173,6 +2181,581 @@ struct PharmacyCameraView: View {
                 detectedPharmacyName = "Unknown Pharmacy"
             }
         }
+    }
+}
+
+// MARK: - Settings Manager
+
+class SettingsManager: ObservableObject {
+    @Published var notificationsEnabled: Bool {
+        didSet { UserDefaults.standard.set(notificationsEnabled, forKey: "settings.notifications") }
+    }
+    @Published var locationEnabled: Bool {
+        didSet { UserDefaults.standard.set(locationEnabled, forKey: "settings.location") }
+    }
+    @Published var faceIDEnabled: Bool {
+        didSet { UserDefaults.standard.set(faceIDEnabled, forKey: "settings.faceID") }
+    }
+    @Published var emailAddress: String {
+        didSet { UserDefaults.standard.set(emailAddress, forKey: "settings.email") }
+    }
+    
+    init() {
+        self.notificationsEnabled = UserDefaults.standard.bool(forKey: "settings.notifications")
+        self.locationEnabled = UserDefaults.standard.bool(forKey: "settings.location")
+        self.faceIDEnabled = UserDefaults.standard.bool(forKey: "settings.faceID")
+        self.emailAddress = UserDefaults.standard.string(forKey: "settings.email") ?? ""
+    }
+    
+    func deleteAllData() {
+        // Clear UserDefaults
+        let domain = Bundle.main.bundleIdentifier!
+        UserDefaults.standard.removePersistentDomain(forName: domain)
+        UserDefaults.standard.synchronize()
+    }
+}
+
+// MARK: - Settings View
+
+struct SettingsView: View {
+    @ObservedObject var medicationManager: MedicationManager
+    @StateObject private var settingsManager = SettingsManager()
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var showingNotificationSettings = false
+    @State private var showingLocationSettings = false
+    @State private var showingEmailEdit = false
+    @State private var showingSignOutAlert = false
+    @State private var showingDeleteAlert = false
+    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+    @State private var locationStatus: CLAuthorizationStatus = .notDetermined
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    
+                    // MARK: - Permissions Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("PERMISSIONS")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.tabiGray)
+                            .padding(.horizontal, 32)
+                        
+                        VStack(spacing: 0) {
+                            // Notifications
+                            Button(action: { showingNotificationSettings = true }) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color.tabiLavLight)
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Image(systemName: "bell.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.tabiLavender)
+                                        )
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Notifications")
+                                            .font(.subheadline.bold())
+                                            .foregroundColor(.primary)
+                                        Text(notificationStatusText)
+                                            .font(.caption)
+                                            .foregroundColor(.tabiGray)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.tabiGray)
+                                        .font(.caption)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color.tabiCard)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            
+                            Divider().padding(.leading, 64)
+                            
+                            // Location
+                            Button(action: { showingLocationSettings = true }) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color.tabiLavLight)
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Image(systemName: "location.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.tabiLavender)
+                                        )
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Location")
+                                            .font(.subheadline.bold())
+                                            .foregroundColor(.primary)
+                                        Text(locationStatusText)
+                                            .font(.caption)
+                                            .foregroundColor(.tabiGray)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.tabiGray)
+                                        .font(.caption)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color.tabiCard)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        .background(Color.tabiCard)
+                        .cornerRadius(14)
+                        .padding(.horizontal, 16)
+                    }
+                    
+                    // MARK: - Account Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("ACCOUNT")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.tabiGray)
+                            .padding(.horizontal, 32)
+                        
+                        VStack(spacing: 0) {
+                            // Email Address
+                            Button(action: { showingEmailEdit = true }) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color.tabiLavLight)
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Image(systemName: "envelope.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.tabiLavender)
+                                        )
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Email Address")
+                                            .font(.subheadline.bold())
+                                            .foregroundColor(.primary)
+                                        Text(settingsManager.emailAddress.isEmpty ? "Not set" : settingsManager.emailAddress)
+                                            .font(.caption)
+                                            .foregroundColor(.tabiGray)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.tabiGray)
+                                        .font(.caption)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color.tabiCard)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        .background(Color.tabiCard)
+                        .cornerRadius(14)
+                        .padding(.horizontal, 16)
+                    }
+                    
+                    // MARK: - Security Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("SECURITY")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.tabiGray)
+                            .padding(.horizontal, 32)
+                        
+                        VStack(spacing: 0) {
+                            // Face ID / Touch ID
+                            HStack(spacing: 12) {
+                                Circle()
+                                    .fill(Color.tabiLavLight)
+                                    .frame(width: 36, height: 36)
+                                    .overlay(
+                                        Image(systemName: biometricIconName)
+                                            .font(.caption)
+                                            .foregroundColor(.tabiLavender)
+                                    )
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(biometricTypeName)
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.primary)
+                                    Text("Require authentication to open app")
+                                        .font(.caption)
+                                        .foregroundColor(.tabiGray)
+                                }
+                                
+                                Spacer()
+                                
+                                Toggle("", isOn: $settingsManager.faceIDEnabled)
+                                    .labelsHidden()
+                                    .tint(.tabiOrange)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(Color.tabiCard)
+                        }
+                        .background(Color.tabiCard)
+                        .cornerRadius(14)
+                        .padding(.horizontal, 16)
+                    }
+                    
+                    // MARK: - Actions Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("ACTIONS")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.tabiGray)
+                            .padding(.horizontal, 32)
+                        
+                        VStack(spacing: 0) {
+                            // Sign Out
+                            Button(action: { showingSignOutAlert = true }) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color.tabiOrange.opacity(0.15))
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                                .font(.caption)
+                                                .foregroundColor(.tabiOrange)
+                                        )
+                                    
+                                    Text("Sign Out")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.tabiOrange)
+                                    
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color.tabiCard)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            
+                            Divider().padding(.leading, 64)
+                            
+                            // Delete Account
+                            Button(action: { showingDeleteAlert = true }) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color.tabiRed.opacity(0.15))
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Image(systemName: "trash.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.tabiRed)
+                                        )
+                                    
+                                    Text("Delete Account & All Data")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.tabiRed)
+                                    
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color.tabiCard)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        .background(Color.tabiCard)
+                        .cornerRadius(14)
+                        .padding(.horizontal, 16)
+                    }
+                    
+                    // MARK: - App Info
+                    VStack(spacing: 8) {
+                        Text("Tabi Medication Manager")
+                            .font(.caption)
+                            .foregroundColor(.tabiGray)
+                        Text("Version 1.0.0")
+                            .font(.caption)
+                            .foregroundColor(.tabiGray)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 16)
+                    
+                    Spacer().frame(height: 32)
+                }
+                .padding(.top, 8)
+            }
+            .background(Color.tabiBG)
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(.tabiOrange)
+                        .font(.subheadline.bold())
+                }
+            }
+            .sheet(isPresented: $showingEmailEdit) {
+                EditEmailSheet(settingsManager: settingsManager)
+            }
+            .alert("Sign Out", isPresented: $showingSignOutAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Sign Out", role: .destructive) {
+                    performSignOut()
+                }
+            } message: {
+                Text("Are you sure you want to sign out?")
+            }
+            .alert("Delete Account", isPresented: $showingDeleteAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) {
+                    performDeleteAccount()
+                }
+            } message: {
+                Text("This will permanently delete your account and all associated data. This action cannot be undone.")
+            }
+            .alert("Notifications Permission", isPresented: $showingNotificationSettings) {
+                Button("Cancel", role: .cancel) {}
+                Button("Open Settings") {
+                    openAppSettings()
+                }
+            } message: {
+                Text(notificationAlertMessage)
+            }
+            .alert("Location Permission", isPresented: $showingLocationSettings) {
+                Button("Cancel", role: .cancel) {}
+                Button("Open Settings") {
+                    openAppSettings()
+                }
+            } message: {
+                Text(locationAlertMessage)
+            }
+            .onAppear {
+                checkPermissions()
+            }
+        }
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var biometricTypeName: String {
+        return "Face ID"
+    }
+    
+    private var biometricIconName: String {
+        return "faceid"
+    }
+    
+    private var notificationStatusText: String {
+        switch notificationStatus {
+        case .authorized:
+            return "Enabled"
+        case .denied:
+            return "Disabled - Open Settings to enable"
+        case .notDetermined:
+            return "Not configured"
+        case .provisional:
+            return "Limited"
+        case .ephemeral:
+            return "Temporary"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+    
+    private var locationStatusText: String {
+        switch locationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            return "Enabled"
+        case .denied, .restricted:
+            return "Disabled - Open Settings to enable"
+        case .notDetermined:
+            return "Not configured"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+    
+    private var notificationAlertMessage: String {
+        switch notificationStatus {
+        case .authorized:
+            return "Notifications are currently enabled. You can manage notification settings in the Settings app."
+        case .denied:
+            return "Notifications are currently disabled. Open Settings to enable notifications for medication reminders."
+        case .notDetermined:
+            return "Notification permission has not been requested yet. The app will ask for permission when you add your first medication."
+        default:
+            return "Manage notification settings in the Settings app."
+        }
+    }
+    
+    private var locationAlertMessage: String {
+        switch locationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            return "Location access is currently enabled. You can manage location settings in the Settings app."
+        case .denied, .restricted:
+            return "Location access is currently disabled. Open Settings to enable location access for finding nearby pharmacies."
+        case .notDetermined:
+            return "Location permission has not been requested yet. The app will ask for permission when you search for pharmacies."
+        @unknown default:
+            return "Manage location settings in the Settings app."
+        }
+    }
+    
+    // MARK: - Functions
+    
+    private func checkPermissions() {
+        // Check notification status
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                notificationStatus = settings.authorizationStatus
+            }
+        }
+        
+        // Check location status
+        let locationManager = CLLocationManager()
+        locationStatus = locationManager.authorizationStatus
+    }
+    
+    private func openAppSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
+    
+    private func performSignOut() {
+        // Clear session data but keep user data
+        settingsManager.faceIDEnabled = false
+        dismiss()
+    }
+    
+    private func performDeleteAccount() {
+        // Delete all data
+        settingsManager.deleteAllData()
+        medicationManager.deleteAllMedications()
+        dismiss()
+    }
+}
+
+// MARK: - Edit Email Sheet
+
+struct EditEmailSheet: View {
+    @ObservedObject var settingsManager: SettingsManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var email: String = ""
+    @FocusState private var isEmailFocused: Bool
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    
+                    // Icon
+                    Circle()
+                        .fill(Color.tabiLavLight)
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Image(systemName: "envelope.fill")
+                                .font(.system(size: 36))
+                                .foregroundColor(.tabiLavender)
+                        )
+                        .padding(.top, 8)
+                    
+                    Text("Update Email Address")
+                        .font(.title3.bold())
+                    
+                    Text("Your email is used for account recovery and important notifications")
+                        .font(.subheadline)
+                        .foregroundColor(.tabiGray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                    
+                    // Email field
+                    VStack(spacing: 0) {
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(Color.tabiLavLight)
+                                .frame(width: 32, height: 32)
+                                .overlay(
+                                    Image(systemName: "at")
+                                        .font(.caption)
+                                        .foregroundColor(.tabiLavender)
+                                )
+                            
+                            TextField("Enter email address", text: $email)
+                                .font(.subheadline)
+                                .foregroundColor(.primary)
+                                .keyboardType(.emailAddress)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .focused($isEmailFocused)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                    }
+                    .background(Color.tabiCard)
+                    .cornerRadius(14)
+                    .padding(.horizontal, 16)
+                    
+                    if !isValidEmail(email) && !email.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                                .foregroundColor(.tabiOrange)
+                            Text("Please enter a valid email address")
+                                .font(.caption)
+                                .foregroundColor(.tabiOrange)
+                        }
+                        .padding(.horizontal, 32)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.top, 8)
+            }
+            .background(Color.tabiBG)
+            .navigationTitle("Email Address")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(.tabiGray)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { saveEmail() }
+                        .font(.subheadline.bold())
+                        .foregroundColor(isValidEmail(email) ? .tabiOrange : .tabiGray)
+                        .disabled(!isValidEmail(email))
+                }
+            }
+            .onAppear {
+                email = settingsManager.emailAddress
+                isEmailFocused = true
+            }
+        }
+    }
+    
+    private func isValidEmail(_ email: String) -> Bool {
+        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        let emailPredicate = NSPredicate(format: "SELF MATCHES %@", emailRegex)
+        return emailPredicate.evaluate(with: email)
+    }
+    
+    private func saveEmail() {
+        settingsManager.emailAddress = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        dismiss()
+    }
+}
+
+// MARK: - MedicationManager Extension for Delete
+
+extension MedicationManager {
+    func deleteAllMedications() {
+        medications.removeAll()
+        gameStats = GameStats()
     }
 }
 
