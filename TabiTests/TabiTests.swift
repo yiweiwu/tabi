@@ -59,7 +59,28 @@ struct TabiTests {
         ),
     ]
     
+    // MARK: - Cached Test Results (for speed)
+    
+    /// Cache for analyzed medication results to avoid re-running OCR
+    private static var cachedResults: [String: DetectedMedicationInfo] = [:]
+    private static let cacheLock = NSLock()
+    
+    /// Clears the test result cache - call this when testing parser changes
+    static func clearCache() {
+        cacheLock.lock()
+        cachedResults.removeAll()
+        cacheLock.unlock()
+        print("🗑️ Test cache cleared")
+    }
+    
     // MARK: - Main Detection Tests
+    
+    @Test("Clear cache before running tests")
+    func testClearCache() async throws {
+        // Always run this first to ensure clean state
+        TabiTests.clearCache()
+        print("✅ Cache cleared - tests will use fresh OCR/parsing results")
+    }
     
     @Test(arguments: testCases)
     func testMedicationDetection(testCase: MedicationTestCase) async throws {
@@ -67,17 +88,13 @@ struct TabiTests {
         
         print("\n🧪 Testing: \(testCase.description)")
         print("   Image: \(testCase.imageName)")
-        print("   Expected Medication: \(testCase.expectedMedication)")
-        print("   Expected Dosage: \(testCase.expectedDosage)")
         
-        let detectedInfo = try await detectMedicationInfo(from: image)
+        let detectedInfo = try await detectMedicationInfo(from: image, cacheKey: testCase.imageName)
         
-        print("\n📊 Detection Results:")
+        print("📊 Detection Results:")
         print("   Detected Medication: \(detectedInfo.medicationName)")
         print("   Detected Dosage: \(detectedInfo.dosage)")
         print("   Detected Schedule: \(detectedInfo.schedule)")
-        print("\n📝 All Detected Text:")
-        detectedInfo.allDetectedText.forEach { print("   - \($0)") }
         
         // Verify medication name (lenient threshold for OCR variations)
         let medicationMatch = fuzzyMatch(
@@ -86,25 +103,19 @@ struct TabiTests {
             threshold: 0.75
         )
         
-        if !medicationMatch {
-            let similarity = calculateSimilarity(detectedInfo.medicationName, testCase.expectedMedication)
-            print("❌ Medication name mismatch!")
-            print("   Expected: '\(testCase.expectedMedication)'")
-            print("   Got: '\(detectedInfo.medicationName)'")
-            print("   Similarity: \(String(format: "%.2f", similarity))")
-        }
-        #expect(medicationMatch)
+        #expect(
+            medicationMatch,
+            "Expected medication '\(testCase.expectedMedication)' but got '\(detectedInfo.medicationName)' with similarity \(String(format: "%.2f", calculateSimilarity(detectedInfo.medicationName, testCase.expectedMedication)))"
+        )
         
         // Verify dosage
         let dosageMatch = detectedInfo.dosage.contains(testCase.expectedDosage) ||
                           fuzzyMatch(detectedInfo.dosage, testCase.expectedDosage, threshold: 0.8)
         
-        if !dosageMatch {
-            print("❌ Dosage mismatch!")
-            print("   Expected: '\(testCase.expectedDosage)'")
-            print("   Got: '\(detectedInfo.dosage)'")
-        }
-        #expect(dosageMatch)
+        #expect(
+            dosageMatch,
+            "Expected dosage '\(testCase.expectedDosage)' but got '\(detectedInfo.dosage)'"
+        )
         
         // Verify schedule if provided
         if let expectedSchedule = testCase.expectedSchedule {
@@ -114,18 +125,35 @@ struct TabiTests {
                 threshold: 0.6
             )
             
-            if !scheduleMatch {
-                print("❌ Schedule mismatch!")
-                print("   Expected: '\(expectedSchedule)'")
-                print("   Got: '\(detectedInfo.schedule)'")
-            }
-            #expect(scheduleMatch)
+            #expect(
+                scheduleMatch,
+                "Expected schedule '\(expectedSchedule)' but got '\(detectedInfo.schedule)'"
+            )
         }
         
-        print("\n✅ Test passed: \(testCase.description)")
+        print("✅ Test passed: \(testCase.description)\n")
     }
     
     // MARK: - Detailed Debug Tests
+    
+    @Test
+    func testRawOCROutput() async throws {
+        print("\n🔍 RAW OCR DIAGNOSTIC TEST")
+        print("==================================\n")
+        
+        for testCase in Self.testCases {
+            let image = try loadTestImage(named: testCase.imageName)
+            let allTexts = try await recognizeAllText(in: image)
+            
+            print("📷 \(testCase.imageName):")
+            print("   Expected: \(testCase.expectedMedication) - \(testCase.expectedDosage)")
+            print("\n   Raw OCR Output:")
+            allTexts.enumerated().forEach { index, text in
+                print("   \(index + 1). '\(text)'")
+            }
+            print("")
+        }
+    }
     
     @Test
     func testHydrocodoneDetailed() async throws {
@@ -134,22 +162,19 @@ struct TabiTests {
         print("\n🔍 DETAILED ANALYSIS: Hydrocodone")
         print("==================================")
         
-        let allTexts = try await recognizeAllText(in: image)
-        
-        print("\n📝 Raw OCR Output (in order):")
-        allTexts.enumerated().forEach { index, text in
-            print("  \(index + 1). '\(text)'")
-        }
-        
-        let info = try await detectMedicationInfo(from: image)
+        let info = try await detectMedicationInfo(from: image, cacheKey: "Med_Hydrocodone")
         
         print("\n📊 Extracted Information:")
         print("  Medication: \(info.medicationName)")
         print("  Dosage: \(info.dosage)")
         print("  Schedule: \(info.schedule)")
         
-        let hasHydrocodone = info.medicationName.lowercased().contains("hydrocodone")
-        let hasAcetamin = info.medicationName.lowercased().contains("acetamin")
+        print("\n📝 All Detected Text:")
+        info.allDetectedText.forEach { print("  - \($0)") }
+        
+        let medicationLowercased = info.medicationName.lowercased()
+        let hasHydrocodone = medicationLowercased.contains("hydrocodone")
+        let hasAcetamin = medicationLowercased.contains("acetamin")
         let hasDosage = info.dosage.contains("5-325") || info.dosage.contains("5 325")
         
         print("\n✅ Validation:")
@@ -157,8 +182,8 @@ struct TabiTests {
         print("  Contains 'Acetamin': \(hasAcetamin ? "✅" : "❌")")
         print("  Contains '5-325': \(hasDosage ? "✅" : "❌")")
         
-        #expect(hasHydrocodone)
-        #expect(hasDosage)
+        #expect(hasHydrocodone, "Medication name should contain 'Hydrocodone'")
+        #expect(hasDosage, "Dosage should contain '5-325' or '5 325'")
     }
     
     @Test
@@ -168,22 +193,19 @@ struct TabiTests {
         print("\n🔍 DETAILED ANALYSIS: Doxycycline")
         print("==================================")
         
-        let allTexts = try await recognizeAllText(in: image)
-        
-        print("\n📝 Raw OCR Output (in order):")
-        allTexts.enumerated().forEach { index, text in
-            print("  \(index + 1). '\(text)'")
-        }
-        
-        let info = try await detectMedicationInfo(from: image)
+        let info = try await detectMedicationInfo(from: image, cacheKey: "Med_Doxycycline")
         
         print("\n📊 Extracted Information:")
         print("  Medication: \(info.medicationName)")
         print("  Dosage: \(info.dosage)")
         print("  Schedule: \(info.schedule)")
         
-        let hasDoxycycline = info.medicationName.lowercased().contains("doxycycline")
-        let hasHyclate = info.medicationName.lowercased().contains("hyclate")
+        print("\n📝 All Detected Text:")
+        info.allDetectedText.forEach { print("  - \($0)") }
+        
+        let medicationLowercased = info.medicationName.lowercased()
+        let hasDoxycycline = medicationLowercased.contains("doxycycline")
+        let hasHyclate = medicationLowercased.contains("hyclate")
         let hasDosage = info.dosage.contains("100")
         
         print("\n✅ Validation:")
@@ -191,8 +213,8 @@ struct TabiTests {
         print("  Contains 'Hyclate': \(hasHyclate ? "✅" : "❌")")
         print("  Contains '100 MG': \(hasDosage ? "✅" : "❌")")
         
-        #expect(hasDoxycycline)
-        #expect(hasDosage)
+        #expect(hasDoxycycline, "Medication name should contain 'Doxycycline'")
+        #expect(hasDosage, "Dosage should contain '100'")
     }
     
     @Test
@@ -209,10 +231,10 @@ struct TabiTests {
             print("   High Confidence (>80%): \(report.highConfidenceCount)/\(report.totalObservations)")
             print("   Low Confidence (<50%): \(report.lowConfidenceCount)/\(report.totalObservations)")
             
-            if report.averageConfidence <= 0.5 {
-                print("   ⚠️ Low average OCR confidence: \(String(format: "%.1f%%", report.averageConfidence * 100))")
-            }
-            #expect(report.averageConfidence > 0.5)
+            #expect(
+                report.averageConfidence > 0.5,
+                "OCR confidence for \(testCase.imageName) is too low: \(String(format: "%.1f%%", report.averageConfidence * 100))"
+            )
             
             print("")
         }
@@ -220,6 +242,10 @@ struct TabiTests {
     
     // MARK: - Helper Methods
     
+    /// Loads a test image from the test bundle
+    /// - Parameter imageName: The name of the image file (with or without extension)
+    /// - Returns: The loaded UIImage
+    /// - Throws: `TestError.imageNotFound` if the image cannot be found or loaded
     private func loadTestImage(named imageName: String) throws -> UIImage {
         print("🔍 Attempting to load image: '\(imageName)'")
         
@@ -279,14 +305,43 @@ struct TabiTests {
         throw TestError.imageNotFound(imageName)
     }
     
-    private func detectMedicationInfo(from image: UIImage) async throws -> DetectedMedicationInfo {
-        try await withCheckedThrowingContinuation { continuation in
+    /// Detects medication information from an image using the MedicationAnalyzer (with caching)
+    /// - Parameter image: The UIImage to analyze
+    /// - Returns: Detected medication information
+    /// - Throws: Any errors that occur during detection
+    private func detectMedicationInfo(from image: UIImage, cacheKey: String? = nil) async throws -> DetectedMedicationInfo {
+        // Check cache first if we have a key
+        if let key = cacheKey {
+            Self.cacheLock.lock()
+            if let cached = Self.cachedResults[key] {
+                Self.cacheLock.unlock()
+                print("📦 Using cached result for \(key)")
+                return cached
+            }
+            Self.cacheLock.unlock()
+        }
+        
+        // Perform actual detection
+        let result = try await withCheckedThrowingContinuation { continuation in
             MedicationAnalyzer.shared.detectMedicationFromLabel(image: image) { info in
                 continuation.resume(returning: info)
             }
         }
+        
+        // Cache the result if we have a key
+        if let key = cacheKey {
+            Self.cacheLock.lock()
+            Self.cachedResults[key] = result
+            Self.cacheLock.unlock()
+        }
+        
+        return result
     }
     
+    /// Recognizes all text in an image using Vision framework
+    /// - Parameter image: The UIImage to analyze
+    /// - Returns: Array of recognized text strings, sorted top-to-bottom
+    /// - Throws: Any errors that occur during text recognition
     private func recognizeAllText(in image: UIImage) async throws -> [String] {
         guard let cgImage = image.cgImage else {
             throw TestError.invalidImage
@@ -318,6 +373,10 @@ struct TabiTests {
         }
     }
     
+    /// Analyzes OCR confidence metrics for an image
+    /// - Parameter image: The UIImage to analyze
+    /// - Returns: Report containing confidence statistics
+    /// - Throws: `TestError.invalidImage` if the image cannot be converted to CGImage
     private func analyzeOCRConfidence(in image: UIImage) async throws -> OCRConfidenceReport {
         guard let cgImage = image.cgImage else {
             throw TestError.invalidImage
@@ -376,11 +435,22 @@ struct TabiTests {
     
     // MARK: - String Matching Utilities
     
+    /// Performs fuzzy string matching using Levenshtein distance
+    /// - Parameters:
+    ///   - str1: First string to compare
+    ///   - str2: Second string to compare
+    ///   - threshold: Minimum similarity score (0.0-1.0) to consider a match
+    /// - Returns: True if the strings match within the threshold
     private func fuzzyMatch(_ str1: String, _ str2: String, threshold: Double = 0.8) -> Bool {
         let similarity = calculateSimilarity(str1, str2)
         return similarity >= threshold
     }
     
+    /// Calculates normalized similarity between two strings
+    /// - Parameters:
+    ///   - str1: First string to compare
+    ///   - str2: Second string to compare
+    /// - Returns: Similarity score from 0.0 (completely different) to 1.0 (identical)
     private func calculateSimilarity(_ str1: String, _ str2: String) -> Double {
         let s1 = normalize(str1)
         let s2 = normalize(str2)
@@ -394,6 +464,9 @@ struct TabiTests {
         return 1.0 - (Double(distance) / Double(maxLength))
     }
     
+    /// Normalizes a string for comparison by removing punctuation, whitespace, and converting to lowercase
+    /// - Parameter str: The string to normalize
+    /// - Returns: Normalized string suitable for comparison
     private func normalize(_ str: String) -> String {
         return str
             .lowercased()
@@ -404,6 +477,11 @@ struct TabiTests {
             .joined()
     }
     
+    /// Calculates Levenshtein distance between two strings (edit distance)
+    /// - Parameters:
+    ///   - s1: First string
+    ///   - s2: Second string
+    /// - Returns: Minimum number of single-character edits needed to transform s1 into s2
     private func levenshteinDistance(_ s1: String, _ s2: String) -> Int {
         let arr1 = Array(s1)
         let arr2 = Array(s2)
@@ -432,15 +510,23 @@ struct TabiTests {
 
 // MARK: - Supporting Types
 
+/// Report containing OCR confidence analysis metrics
 struct OCRConfidenceReport {
+    /// Average confidence score across all observations (0.0-1.0)
     let averageConfidence: Double
+    /// Total number of text observations detected
     let totalObservations: Int
+    /// Number of observations with confidence > 80%
     let highConfidenceCount: Int
+    /// Number of observations with confidence < 50%
     let lowConfidenceCount: Int
 }
 
+/// Errors that can occur during test execution
 enum TestError: Error {
+    /// The specified test image could not be found in any bundle
     case imageNotFound(String)
+    /// The image could not be converted to CGImage
     case invalidImage
     
     var localizedDescription: String {

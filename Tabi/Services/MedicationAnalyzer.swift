@@ -58,89 +58,158 @@ class MedicationAnalyzer {
         }
     }
 
-    // MARK: - Private helpers
-
-    private func extractMedicationInfo(from texts: [String]) -> DetectedMedicationInfo {
+    // MARK: - Private helpers (testable)
+    
+    /// Extracts medication info from OCR text - exposed for unit testing
+    /// Now includes fuzzy matching and partial word detection for real-world OCR errors
+    func extractMedicationInfo(from texts: [String]) -> DetectedMedicationInfo {
         var medicationName = "Unknown Medication"
         var schedule = "Take as directed"
         var dosage = ""
         var scheduleTime = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
 
+        // Expanded medication keywords with partial matching support
         let medicationKeywords = [
             "hydrocodone", "acetaminophen", "acetamin",
-            "doxycycline", "hyclate",
+            "doxycycline", "hyclate", "doxy",  // Added "doxy" for partial matches
             "vitamin", "ibuprofen", "amoxicillin",
-            "lisinopril", "metformin", "atorvastatin", "omeprazole"
+            "lisinopril", "metformin", "atorvastatin", "omeprazole",
+            // Add common partial OCR errors
+            "hydro", "doxcy", "ibupro"
         ]
-        let dosagePattern = /(\d+[-\s]?\d*\s*(MG|MCG|mg|mcg))/
-        let scheduleKeywords = ["daily", "twice", "once", "every", "morning", "evening", "night", "take"]
+        
+        let dosagePattern = /(\d+[-\s]?\d*\s*(MG|MCG|mg|mcg|Mg))/
+        let scheduleKeywords = ["daily", "twice", "once", "every", "morning", "evening", "night", "take", "tablet", "capsule"]
 
-        // Find dosage
+        // STEP 1: Find dosage (most reliable anchor point)
         var dosageIndex: Int?
         for (index, text) in texts.enumerated() {
             if let match = text.firstMatch(of: dosagePattern) {
-                dosage = String(match.0); dosageIndex = index
-                print("✅ Found dosage at index \(index): \(dosage)")
+                dosage = String(match.0)
+                dosageIndex = index
+                print("✅ Found dosage at index \(index): '\(dosage)'")
                 break
             }
         }
 
-        // Find medication name near dosage
+        // STEP 2: Find medication name with fuzzy matching
+        var foundMedication = false
+        
+        // Helper function for fuzzy keyword matching
+        func containsKeywordFuzzy(_ text: String, keywords: [String]) -> String? {
+            let cleanText = text.lowercased()
+                .replacingOccurrences(of: "-", with: "")
+                .replacingOccurrences(of: " ", with: "")
+            
+            for keyword in keywords {
+                let cleanKeyword = keyword.replacingOccurrences(of: "-", with: "")
+                
+                // Exact match
+                if cleanText.contains(cleanKeyword) {
+                    return keyword
+                }
+                
+                // Partial match (at least 5 characters matching)
+                if keyword.count >= 5 && cleanKeyword.count >= 5 {
+                    let keywordPrefix = cleanKeyword.prefix(5)
+                    if cleanText.contains(keywordPrefix) {
+                        return keyword
+                    }
+                }
+            }
+            return nil
+        }
+
+        // Search near dosage first (more reliable)
         if let dosageIdx = dosageIndex {
-            let searchRange = max(0, dosageIdx - 3)..<dosageIdx
-            outer: for index in searchRange.reversed() {
+            let searchRange = max(0, dosageIdx - 5)..<dosageIdx  // Expanded search range
+            
+            for index in searchRange.reversed() {
                 let text = texts[index]
-                let lowerText = text.lowercased()
-                for keyword in medicationKeywords where lowerText.contains(keyword) {
+                
+                if let matchedKeyword = containsKeywordFuzzy(text, keywords: medicationKeywords) {
                     var fullName = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if index + 1 < texts.count && index + 1 < dosageIdx {
-                        let nextLine = texts[index + 1].lowercased()
-                        for nextKeyword in medicationKeywords where nextLine.contains(nextKeyword) {
+                    
+                    // Try to combine with next line if it's also a medication keyword
+                    if index + 1 < texts.count && index + 1 <= dosageIdx {
+                        if containsKeywordFuzzy(texts[index + 1], keywords: medicationKeywords) != nil {
                             fullName += " " + texts[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
-                            break
                         }
                     }
+                    
                     medicationName = cleanAndCapitalize(fullName)
-                    print("✅ Found medication name near dosage: \(medicationName)")
-                    break outer
+                    foundMedication = true
+                    print("✅ Found medication name near dosage at index \(index): '\(medicationName)'")
+                    break
                 }
             }
         }
 
-        // Fallback: search first 5 lines
-        if medicationName == "Unknown Medication" {
-            outer: for (index, text) in texts.enumerated() where index < 5 {
-                let lowerText = text.lowercased()
-                for keyword in medicationKeywords where lowerText.contains(keyword) {
+        // STEP 3: Fallback - search entire text with fuzzy matching
+        if !foundMedication {
+            print("⚠️ Medication not found near dosage, searching all text...")
+            
+            for (index, text) in texts.enumerated() where index < min(texts.count, 10) {
+                if let matchedKeyword = containsKeywordFuzzy(text, keywords: medicationKeywords) {
                     var fullName = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if index + 1 < min(texts.count, 5) {
-                        let nextLine = texts[index + 1].lowercased()
-                        for nextKeyword in medicationKeywords where nextLine.contains(nextKeyword) {
+                    
+                    // Try to combine with adjacent lines
+                    if index + 1 < min(texts.count, 10) {
+                        if containsKeywordFuzzy(texts[index + 1], keywords: medicationKeywords) != nil {
                             fullName += " " + texts[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
-                            break
                         }
                     }
+                    
                     medicationName = cleanAndCapitalize(fullName)
-                    print("✅ Found medication name (fallback): \(medicationName)")
-                    break outer
+                    foundMedication = true
+                    print("✅ Found medication name (fallback) at index \(index): '\(medicationName)'")
+                    break
                 }
             }
         }
-
-        // Extract schedule
+        
+        // STEP 4: Extract schedule with better multi-line support
+        var scheduleLines: [String] = []
         for text in texts {
             let lowerText = text.lowercased()
             if scheduleKeywords.contains(where: { lowerText.contains($0) }) {
-                schedule = text
-                if lowerText.contains("morning") { scheduleTime = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date()) ?? Date() }
-                else if lowerText.contains("evening") || lowerText.contains("night") { scheduleTime = Calendar.current.date(bySettingHour: 20, minute: 0, second: 0, of: Date()) ?? Date() }
-                else if lowerText.contains("twice") { scheduleTime = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date() }
-                break
+                scheduleLines.append(text)
+                
+                // Break after finding a complete instruction
+                if lowerText.contains("take") && (lowerText.contains("day") || lowerText.contains("hour")) {
+                    break
+                }
             }
         }
+        
+        if !scheduleLines.isEmpty {
+            schedule = scheduleLines.joined(separator: " ")
+            
+            // Set schedule time based on keywords
+            let scheduleLower = schedule.lowercased()
+            if scheduleLower.contains("morning") {
+                scheduleTime = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date()) ?? Date()
+            } else if scheduleLower.contains("evening") || scheduleLower.contains("night") {
+                scheduleTime = Calendar.current.date(bySettingHour: 20, minute: 0, second: 0, of: Date()) ?? Date()
+            } else if scheduleLower.contains("twice") {
+                scheduleTime = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date()
+            }
+            
+            print("✅ Found schedule: '\(schedule)'")
+        }
 
-        print("📊 Final: medication=\(medicationName), dosage=\(dosage), schedule=\(schedule)")
-        return DetectedMedicationInfo(medicationName: medicationName, schedule: schedule, dosage: dosage, scheduleTime: scheduleTime, allDetectedText: texts)
+        print("📊 Final extraction results:")
+        print("   Medication: '\(medicationName)'")
+        print("   Dosage: '\(dosage)'")
+        print("   Schedule: '\(schedule)'")
+        
+        return DetectedMedicationInfo(
+            medicationName: medicationName,
+            schedule: schedule,
+            dosage: dosage,
+            scheduleTime: scheduleTime,
+            allDetectedText: texts
+        )
     }
 
     private func cleanAndCapitalize(_ text: String) -> String {
