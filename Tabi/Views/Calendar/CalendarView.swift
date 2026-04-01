@@ -4,28 +4,46 @@ import SwiftUI
 
 struct CalendarView: View {
     @ObservedObject var medicationManager: MedicationManager
-    @StateObject private var viewModel = CalendarViewModel()
+    @State private var currentDate = Date()
     
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Segmented control: Week / Month / Year
-                Picker("", selection: $viewModel.viewMode) {
-                    ForEach(CalendarViewModel.ViewMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                // Week navigation controls
+                HStack {
+                    Button(action: previousWeek) {
+                        Image(systemName: "chevron.left")
+                            .font(.title3.bold())
+                            .foregroundColor(.primary)
+                            .frame(width: 44, height: 44)
+                            .background(Color.tabiCard)
+                            .cornerRadius(12)
+                    }
+                    
+                    Spacer()
+                    
+                    Text(weekRangeText)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Button(action: nextWeek) {
+                        Image(systemName: "chevron.right")
+                            .font(.title3.bold())
+                            .foregroundColor(.primary)
+                            .frame(width: 44, height: 44)
+                            .background(Color.tabiCard)
+                            .cornerRadius(12)
+                    }
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
 
-                // Content based on view mode
+                // Week view content
                 ScrollView {
                     VStack(spacing: 16) {
-                        if viewModel.viewMode == .week {
-                            WeekTimelineView(medications: medicationManager.medications, currentDate: viewModel.displayedMonth)
-                        } else if viewModel.viewMode == .month {
-                            MonthTimelineView(medications: medicationManager.medications, currentDate: viewModel.displayedMonth)
-                        } else {
-                            YearTimelineView(medications: medicationManager.medications, currentDate: viewModel.displayedMonth)
-                        }
+                        WeekTimelineView(medications: medicationManager.medications, currentDate: currentDate)
                     }
                     .padding(.bottom, 32)
                 }
@@ -34,6 +52,25 @@ struct CalendarView: View {
             .navigationTitle("Medication Timeline")
             .navigationBarTitleDisplayMode(.large)
         }
+    }
+    
+    private func previousWeek() {
+        currentDate = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: currentDate) ?? currentDate
+    }
+    
+    private func nextWeek() {
+        currentDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: currentDate) ?? currentDate
+    }
+    
+    private var weekRangeText: String {
+        let cal = Calendar.current
+        let weekday = cal.component(.weekday, from: currentDate)
+        let startOfWeek = cal.date(byAdding: .day, value: -(weekday - 1), to: cal.startOfDay(for: currentDate)) ?? currentDate
+        let endOfWeek = cal.date(byAdding: .day, value: 6, to: startOfWeek) ?? currentDate
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return "\(formatter.string(from: startOfWeek)) - \(formatter.string(from: endOfWeek))"
     }
 }
 
@@ -52,230 +89,14 @@ struct WeekTimelineView: View {
     
     var body: some View {
         VStack(spacing: 16) {
-            // Week header
-            HStack {
-                Text(weekRangeText)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            
-            // Week calendar grid with dots
+            // Week calendar grid
             WeekCalendarDotGrid(medications: medications, weekDays: weekDays)
                 .padding(.horizontal, 16)
             
-            // Legend
-            MedicationLegend(medications: medications)
+            // Refill reminders
+            RefillRemindersSection(medications: medications, weekDays: weekDays)
                 .padding(.horizontal, 16)
         }
-    }
-    
-    private var weekRangeText: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        guard let first = weekDays.first, let last = weekDays.last else { return "" }
-        return "\(formatter.string(from: first)) - \(formatter.string(from: last))"
-    }
-}
-
-// MARK: - Medication Week Card
-
-struct MedicationWeekCard: View {
-    let medication: Medication
-    let weekDays: [Date]
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(medication.pillColor)
-                    .frame(width: 44, height: 44)
-                    .overlay(Text(medication.emoji).font(.title3))
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(medication.name)
-                        .font(.subheadline.bold())
-                        .foregroundColor(.primary)
-                    Text(medication.type)
-                        .font(.caption)
-                        .foregroundColor(.tabiGray)
-                }
-                
-                Spacer()
-            }
-        }
-        .padding(16)
-        .background(Color.tabiCard)
-        .cornerRadius(14)
-    }
-}
-
-// MARK: - Month Timeline View
-
-struct MonthTimelineView: View {
-    let medications: [Medication]
-    let currentDate: Date
-    
-    private var monthName: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: currentDate)
-    }
-    
-    private func daysInMonth() -> [Date] {
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.year, .month], from: currentDate)
-        guard let firstDay = cal.date(from: comps),
-              let range = cal.range(of: .day, in: .month, for: currentDate) else { return [] }
-        return range.compactMap { day in
-            cal.date(byAdding: .day, value: day - 1, to: firstDay)
-        }
-    }
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text(monthName)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            
-            // Month calendar grid with dots
-            MonthCalendarDotGrid(medications: medications, monthDays: daysInMonth())
-                .padding(.horizontal, 16)
-            
-            // Legend
-            MedicationLegend(medications: medications)
-                .padding(.horizontal, 16)
-        }
-    }
-}
-
-// MARK: - Medication Month Card
-
-struct MedicationMonthCard: View {
-    let medication: Medication
-    let currentDate: Date
-    let totalDays: Int
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(medication.pillColor)
-                    .frame(width: 44, height: 44)
-                    .overlay(Text(medication.emoji).font(.title3))
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(medication.name)
-                        .font(.subheadline.bold())
-                        .foregroundColor(.primary)
-                    Text(medication.type)
-                        .font(.caption)
-                        .foregroundColor(.tabiGray)
-                }
-                
-                Spacer()
-            }
-        }
-        .padding(16)
-        .background(Color.tabiCard)
-        .cornerRadius(14)
-    }
-}
-
-// MARK: - Stat Item
-
-struct StatItem: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
-    
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundColor(color)
-            Text(value)
-                .font(.caption.bold())
-                .foregroundColor(.primary)
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(.tabiGray)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Year Timeline View
-
-struct YearTimelineView: View {
-    let medications: [Medication]
-    let currentDate: Date
-    
-    private var yearText: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy"
-        return formatter.string(from: currentDate)
-    }
-    
-    private var months: [String] {
-        let formatter = DateFormatter()
-        return formatter.shortMonthSymbols
-    }
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text(yearText)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            
-            ForEach(medications) { medication in
-                MedicationYearCard(medication: medication, currentDate: currentDate, months: months)
-            }
-            .padding(.horizontal, 16)
-        }
-    }
-}
-
-// MARK: - Medication Year Card
-
-struct MedicationYearCard: View {
-    let medication: Medication
-    let currentDate: Date
-    let months: [String]
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(medication.pillColor)
-                    .frame(width: 44, height: 44)
-                    .overlay(Text(medication.emoji).font(.title3))
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(medication.name)
-                        .font(.subheadline.bold())
-                        .foregroundColor(.primary)
-                    Text(medication.type)
-                        .font(.caption)
-                        .foregroundColor(.tabiGray)
-                }
-                
-                Spacer()
-            }
-        }
-        .padding(16)
-        .background(Color.tabiCard)
-        .cornerRadius(14)
     }
 }
 
@@ -286,63 +107,173 @@ struct WeekCalendarDotGrid: View {
     let weekDays: [Date]
     
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Week Overview")
-                .font(.subheadline.bold())
-                .foregroundColor(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 20) {
+            // Header with gradient background
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Weekly Timeline")
+                        .font(.title3.bold())
+                        .foregroundColor(.primary)
+                    Text("\(medications.count) active medications")
+                        .font(.caption)
+                        .foregroundColor(.tabiGray)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
             
-            // Day headers
-            HStack(spacing: 4) {
-                ForEach(weekDays, id: \.self) { day in
-                    dayHeaderView(for: day)
+            VStack(spacing: 0) {
+                // Day headers (top row) - Enhanced design
+                HStack(spacing: 0) {
+                    // Empty space for medication names column
+                    Color.clear
+                        .frame(width: 140)
+                    
+                    // Day columns with today highlight
+                    ForEach(weekDays, id: \.self) { day in
+                        dayHeaderView(for: day)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.bottom, 16)
+                
+                Divider()
+                    .padding(.bottom, 12)
+                
+                // Medication rows
+                ForEach(Array(medications.enumerated()), id: \.element.id) { index, medication in
+                    medicationRow(for: medication, index: index)
+                    
+                    if index < medications.count - 1 {
+                        Divider()
+                            .padding(.leading, 140)
+                            .padding(.vertical, 4)
+                    }
                 }
             }
-            
-            // Week grid with medication dots
-            ForEach(weekDays, id: \.self) { day in
-                dayRowView(for: day)
-            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
         }
-        .padding(16)
-        .background(Color.tabiCard)
-        .cornerRadius(14)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.tabiCard)
+                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 2)
+        )
     }
     
     private func dayHeaderView(for day: Date) -> some View {
-        VStack(spacing: 4) {
-            Text(dayLetter(day))
-                .font(.caption2.bold())
-                .foregroundColor(.tabiGray)
-            Text("\(Calendar.current.component(.day, from: day))")
-                .font(.caption2)
-                .foregroundColor(.tabiGray)
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
-    private func dayRowView(for day: Date) -> some View {
-        HStack(spacing: 8) {
+        let isToday = Calendar.current.isDateInToday(day)
+        let isPast = day < Calendar.current.startOfDay(for: Date())
+        
+        return VStack(spacing: 6) {
             Text(dayLetter(day))
                 .font(.caption.bold())
-                .foregroundColor(.primary)
-                .frame(width: 30, alignment: .leading)
-            
-            HStack(spacing: 6) {
-                ForEach(medications) { medication in
-                    medicationDot(medication, on: day)
-                }
-            }
-            
-            Spacer()
+                .foregroundColor(isToday ? .white : .tabiGray)
+            Text("\(Calendar.current.component(.day, from: day))")
+                .font(.system(.caption, design: .rounded).weight(.semibold))
+                .foregroundColor(isToday ? .white : (isPast ? .secondary : .primary))
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isToday ? 
+                    LinearGradient(colors: [Color.tabiOrange, Color.tabiOrange.opacity(0.8)], 
+                                 startPoint: .topLeading, endPoint: .bottomTrailing) :
+                    LinearGradient(colors: [Color.clear], startPoint: .top, endPoint: .bottom)
+                )
+        )
+        .padding(.horizontal, 2)
     }
     
-    private func medicationDot(_ medication: Medication, on day: Date) -> some View {
-        Circle()
-            .fill(isMedicationActive(medication, on: day) ? medication.pillColor : Color.tabiLavLight)
-            .frame(width: 20, height: 20)
+    private func medicationRow(for medication: Medication) -> some View {
+        HStack(spacing: 12) {
+            // Medication name and color indicator - Clean design
+            HStack(spacing: 10) {
+                // Color indicator stripe
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(
+                        LinearGradient(
+                            colors: [medication.pillColor, medication.pillColor.opacity(0.8)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 4, height: 36)
+                    .shadow(color: medication.pillColor.opacity(0.4), radius: 2, x: 0, y: 0)
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(medication.name)
+                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: iconForMedicationType(medication.type))
+                            .font(.system(size: 9))
+                            .foregroundColor(.tabiGray)
+                        Text(medication.type)
+                            .font(.system(size: 10))
+                            .foregroundColor(.tabiGray)
+                    }
+                }
+            }
+            .frame(width: 128, alignment: .leading)
+            
+            // Week bars - Enhanced with animations and gradients
+            HStack(spacing: 4) {
+                ForEach(weekDays, id: \.self) { day in
+                    dayBar(for: medication, on: day)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(.vertical, 10)
+    }
+    
+    private func medicationRow(for medication: Medication, index: Int) -> some View {
+        medicationRow(for: medication)
+    }
+    
+    private func dayBar(for medication: Medication, on day: Date) -> some View {
+        let isActive = isMedicationActive(medication, on: day)
+        let isToday = Calendar.current.isDateInToday(day)
+        
+        return ZStack {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(
+                    isActive ? 
+                        LinearGradient(
+                            colors: [medication.pillColor.opacity(0.9), medication.pillColor],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ) :
+                        LinearGradient(
+                            colors: [Color.tabiLavLight.opacity(0.4)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                )
+                .frame(height: 40)
+            
+            // Today indicator
+            if isToday {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.tabiOrange, lineWidth: 2)
+                    .frame(height: 40)
+            }
+            
+            // Checkmark for active days
+            if isActive {
+                Image(systemName: "checkmark")
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
+            }
+        }
+        .padding(.horizontal, 2)
     }
     
     private func dayLetter(_ date: Date) -> String {
@@ -359,162 +290,207 @@ struct WeekCalendarDotGrid: View {
         
         return checkDate >= startDate && checkDate <= today
     }
+    
+    private func iconForMedicationType(_ type: String) -> String {
+        switch type.lowercased() {
+        case let t where t.contains("drop"):
+            return "drop.fill"
+        case let t where t.contains("tablet"):
+            return "pills.fill"
+        case let t where t.contains("capsule"):
+            return "capsule.fill"
+        case let t where t.contains("chew"):
+            return "circle.fill"
+        case let t where t.contains("liquid"):
+            return "drop.fill"
+        case let t where t.contains("inhaler"):
+            return "wind"
+        case let t where t.contains("injection"):
+            return "syringe.fill"
+        default:
+            return "pills.fill"
+        }
+    }
 }
 
-// MARK: - Month Calendar Dot Grid
+// MARK: - Refill Reminders Section
 
-struct MonthCalendarDotGrid: View {
+struct RefillRemindersSection: View {
     let medications: [Medication]
-    let monthDays: [Date]
+    let weekDays: [Date]
+    
+    // Generate mock refill dates (in real app, these would come from the medication model)
+    private var refillReminders: [(medication: Medication, refillDate: Date)] {
+        var reminders: [(medication: Medication, refillDate: Date)] = []
+        let calendar = Calendar.current
+        
+        for (index, medication) in medications.enumerated() {
+            // Generate a refill date within the current week (for demo purposes)
+            if let refillDate = calendar.date(byAdding: .day, value: index + 2, to: weekDays.first ?? Date()) {
+                if refillDate >= Date() && weekDays.contains(where: { calendar.isDate($0, inSameDayAs: refillDate) }) {
+                    reminders.append((medication: medication, refillDate: refillDate))
+                }
+            }
+        }
+        
+        return reminders.sorted { reminder1, reminder2 in
+            reminder1.refillDate < reminder2.refillDate
+        }
+    }
     
     var body: some View {
         VStack(spacing: 16) {
-            Text("Month Overview")
-                .font(.subheadline.bold())
-                .foregroundColor(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            // Calendar grid
-            VStack(spacing: 8) {
-                // Weekday headers
-                weekdayHeaders()
-                
-                // Days grid
-                let weeks = groupByWeeks(monthDays)
-                ForEach(Array(weeks.enumerated()), id: \.offset) { _, week in
-                    weekRow(week)
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Refill Reminders")
+                        .font(.title3.bold())
+                        .foregroundColor(.primary)
+                    Text("Upcoming medication refills")
+                        .font(.caption)
+                        .foregroundColor(.tabiGray)
                 }
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            
+            // Refill cards
+            VStack(spacing: 12) {
+                if refillReminders.isEmpty {
+                    EmptyRefillsView()
+                        .padding(.horizontal, 20)
+                } else {
+                    ForEach(refillReminders, id: \.medication.id) { reminder in
+                        RefillReminderCard(
+                            medication: reminder.medication,
+                            refillDate: reminder.refillDate
+                        )
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+            .padding(.bottom, 20)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.tabiCard)
+                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 2)
+        )
+    }
+}
+
+// MARK: - Refill Reminder Card
+struct RefillReminderCard: View {
+    let medication: Medication
+    let refillDate: Date
+    
+    private var daysUntilRefill: Int {
+        Calendar.current.dateComponents([.day], from: Date(), to: refillDate).day ?? 0
+    }
+    
+    private var isUrgent: Bool {
+        daysUntilRefill <= 2
+    }
+    
+    private var refillDateText: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter.string(from: refillDate)
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Color stripe and icon
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(
+                        LinearGradient(
+                            colors: [medication.pillColor, medication.pillColor.opacity(0.8)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 4, height: 50)
+                    .shadow(color: medication.pillColor.opacity(0.4), radius: 2, x: 0, y: 0)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(medication.name)
+                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar.badge.clock")
+                            .font(.caption2)
+                            .foregroundColor(isUrgent ? .tabiRed : .tabiGray)
+                        Text(refillDateText)
+                            .font(.caption)
+                            .foregroundColor(isUrgent ? .tabiRed : .tabiGray)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            // Days remaining badge
+            VStack(spacing: 4) {
+                Text("\(daysUntilRefill)")
+                    .font(.system(.title3, design: .rounded).weight(.bold))
+                    .foregroundColor(isUrgent ? .tabiRed : .tabiOrange)
+                Text(daysUntilRefill == 1 ? "day" : "days")
+                    .font(.caption2)
+                    .foregroundColor(.tabiGray)
+            }
+            .frame(width: 60)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isUrgent ? Color.tabiRed.opacity(0.1) : Color.tabiOrangeLight)
+            )
+            
+            // Action button
+            Button(action: {
+                // Handle refill action
+            }) {
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundColor(.tabiGray)
+                    .frame(width: 32, height: 32)
+                    .background(Color.tabiLavLight)
+                    .clipShape(Circle())
             }
         }
         .padding(16)
-        .background(Color.tabiCard)
-        .cornerRadius(14)
-    }
-    
-    private func weekdayHeaders() -> some View {
-        HStack(spacing: 4) {
-            ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { letter in
-                Text(letter)
-                    .font(.caption2.bold())
-                    .foregroundColor(.tabiGray)
-                    .frame(maxWidth: .infinity)
-            }
-        }
-    }
-    
-    private func weekRow(_ week: [Date?]) -> some View {
-        HStack(spacing: 4) {
-            ForEach(0..<7, id: \.self) { index in
-                if index < week.count, let day = week[index] {
-                    dayCell(for: day)
-                } else {
-                    Color.clear
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                }
-            }
-        }
-    }
-    
-    private func dayCell(for day: Date) -> some View {
-        VStack(spacing: 4) {
-            Text("\(Calendar.current.component(.day, from: day))")
-                .font(.caption.bold())
-                .foregroundColor(.primary)
-            
-            // Medication dots
-            HStack(spacing: 2) {
-                ForEach(medications) { medication in
-                    Circle()
-                        .fill(isMedicationActive(medication, on: day) ? medication.pillColor : Color.clear)
-                        .frame(width: 4, height: 4)
-                }
-            }
-            .frame(height: 8)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 50)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(hasAnyMedication(on: day) ? Color.tabiLavLight.opacity(0.5) : Color.clear)
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.tabiBG)
         )
     }
-    
-    private func groupByWeeks(_ days: [Date]) -> [[Date?]] {
-        guard let firstDay = days.first else { return [] }
-        let cal = Calendar.current
-        let firstWeekday = cal.component(.weekday, from: firstDay)
-        
-        var weeks: [[Date?]] = []
-        var currentWeek: [Date?] = Array(repeating: nil, count: firstWeekday - 1)
-        
-        for day in days {
-            currentWeek.append(day)
-            if currentWeek.count == 7 {
-                weeks.append(currentWeek)
-                currentWeek = []
-            }
-        }
-        
-        if !currentWeek.isEmpty {
-            while currentWeek.count < 7 {
-                currentWeek.append(nil)
-            }
-            weeks.append(currentWeek)
-        }
-        
-        return weeks
-    }
-    
-    private func isMedicationActive(_ medication: Medication, on date: Date) -> Bool {
-        let cal = Calendar.current
-        let startDate = cal.startOfDay(for: medication.dosageTime)
-        let checkDate = cal.startOfDay(for: date)
-        let today = cal.startOfDay(for: Date())
-        
-        return checkDate >= startDate && checkDate <= today
-    }
-    
-    private func hasAnyMedication(on date: Date) -> Bool {
-        medications.contains { isMedicationActive($0, on: date) }
-    }
 }
 
-// MARK: - Medication Legend
+// MARK: - Empty Refills View
 
-struct MedicationLegend: View {
-    let medications: [Medication]
-    
+struct EmptyRefillsView: View {
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Medications")
-                    .font(.caption.bold())
-                    .foregroundColor(.tabiGray)
-                Spacer()
-            }
+        VStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.tabiGreen)
             
-            ForEach(medications) { medication in
-                legendItem(for: medication)
-            }
-        }
-        .padding(12)
-        .background(Color.tabiCard)
-        .cornerRadius(10)
-    }
-    
-    private func legendItem(for medication: Medication) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(medication.pillColor)
-                .frame(width: 12, height: 12)
-            
-            Text(medication.name)
-                .font(.caption)
+            Text("All Set!")
+                .font(.headline)
                 .foregroundColor(.primary)
             
-            Spacer()
+            Text("No refills needed this week")
+                .font(.caption)
+                .foregroundColor(.tabiGray)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
     }
 }
+
+
+
 
