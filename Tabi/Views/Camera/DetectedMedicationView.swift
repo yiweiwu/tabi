@@ -9,12 +9,13 @@ struct DetectedMedicationView: View {
     let onCancel: () -> Void
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).frame(maxHeight: 200).cornerRadius(12).padding()
                     VStack(spacing: 16) {
-                        field("Medication Name", placeholder: "e.g., Vitamin D", binding: $detectedInfo.medicationName)
+                        field("Generic Name", placeholder: "e.g., Hydrocodone-Acetaminophen", binding: $detectedInfo.genericName, bold: true)
+                        field("Brand Name", placeholder: "e.g., Lortab (leave empty if none)", binding: $detectedInfo.brandName)
                         field("Dosage", placeholder: "e.g., 1000 mcg", binding: $detectedInfo.dosage)
                         field("Schedule", placeholder: "e.g., Take 1 tablet daily", binding: $detectedInfo.schedule)
                         if !detectedInfo.allDetectedText.isEmpty {
@@ -44,10 +45,12 @@ struct DetectedMedicationView: View {
     }
 
     @ViewBuilder
-    private func field(_ label: String, placeholder: String, binding: Binding<String>) -> some View {
+    private func field(_ label: String, placeholder: String, binding: Binding<String>, bold: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label).font(.caption).foregroundColor(.tabiGray)
-            TextField(placeholder, text: binding).textFieldStyle(RoundedBorderTextFieldStyle())
+            TextField(placeholder, text: binding)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .font(bold ? .body.bold() : .body)
         }
     }
 }

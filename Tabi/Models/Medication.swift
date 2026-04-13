@@ -4,7 +4,8 @@ import SwiftUI
 
 struct Medication: Identifiable, Codable {
     var id = UUID()
-    var name: String
+    var name: String           // brand name if available, otherwise generic
+    var genericName: String = ""
     var type: String           // "Tablet", "Eye Drops", "Capsule", etc.
     var emoji: String
     var dosageTime: Date

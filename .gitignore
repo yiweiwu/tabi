@@ -57,6 +57,7 @@ tmp/
 *.env
 *.env.local
 *.env.*.local
+Tabi/Config.swift
 
 # Optional: local-only configs
 *.xcconfig

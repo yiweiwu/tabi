@@ -79,7 +79,8 @@ struct DoseSchedule {
 // MARK: - Detected Medication Info (from camera scan)
 
 struct DetectedMedicationInfo {
-    var medicationName: String
+    var brandName: String
+    var genericName: String
     var schedule: String
     var dosage: String
     var scheduleTime: Date

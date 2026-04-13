@@ -2,13 +2,17 @@ import SwiftUI
 
 // MARK: - New Medication Camera View (scan prescription label to add a medication)
 
+private struct CaptureResult: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let info: DetectedMedicationInfo
+}
+
 struct NewMedicationCameraView: View {
     @ObservedObject var medicationManager: MedicationManager
     @Binding var isPresented: Bool
     @ObservedObject private var cameraManager = CameraManager.shared
-    @State private var showingDetectionResult = false
-    @State private var capturedImage: UIImage?
-    @State private var detectedInfo: DetectedMedicationInfo?
+    @State private var captureResult: CaptureResult?
     @State private var hasAttemptedSetup = false
 
     var body: some View {
@@ -67,20 +71,18 @@ struct NewMedicationCameraView: View {
         .onAppear { cameraManager.checkPermission(); if cameraManager.isAuthorized && !hasAttemptedSetup { setupAndStartCamera() } }
         .onChange(of: cameraManager.isAuthorized) { _, v in if v && !hasAttemptedSetup { setupAndStartCamera() } }
         .onDisappear { cameraManager.stopSession(); hasAttemptedSetup = false }
-        .sheet(isPresented: $showingDetectionResult) {
-            if let image = capturedImage, let info = detectedInfo {
-                DetectedMedicationView(image: image, detectedInfo: info,
-                    onSave: { finalInfo in
-                        let idx = medicationManager.medications.count
-                        let newMed = Medication(name: finalInfo.medicationName, type: "Tablet", emoji: "💊", dosageTime: finalInfo.scheduleTime, dosage: finalInfo.dosage, scheduleLabel: "Every Day", points: 10, colorIndex: idx)
-                        medicationManager.medications.append(newMed)
-                        let schedule = MedicationScheduleParser.parse(info: finalInfo, medication: newMed)
-                        CalendarPersistenceManager.shared.save(schedule: schedule)
-                        NotificationScheduler.shared.schedule(for: schedule)
-                        showingDetectionResult = false; isPresented = false
-                    },
-                    onCancel: { showingDetectionResult = false })
-            }
+        .sheet(item: $captureResult) { result in
+            DetectedMedicationView(image: result.image, detectedInfo: result.info,
+                onSave: { finalInfo in
+                    let idx = medicationManager.medications.count
+                    let newMed = Medication(name: finalInfo.brandName.isEmpty ? finalInfo.genericName : finalInfo.brandName, genericName: finalInfo.genericName, type: "Tablet", emoji: "💊", dosageTime: finalInfo.scheduleTime, dosage: finalInfo.dosage, scheduleLabel: "Every Day", points: 10, colorIndex: idx)
+                    medicationManager.medications.append(newMed)
+                    let schedule = MedicationScheduleParser.parse(info: finalInfo, medication: newMed)
+                    CalendarPersistenceManager.shared.save(schedule: schedule)
+                    NotificationScheduler.shared.schedule(for: schedule)
+                    captureResult = nil; isPresented = false
+                },
+                onCancel: { captureResult = nil })
         }
     }
 
@@ -95,7 +97,9 @@ struct NewMedicationCameraView: View {
             self.cameraManager.stopSession()
             if let image = image {
                 MedicationAnalyzer.shared.detectMedicationFromLabel(image: image) { info in
-                    DispatchQueue.main.async { self.capturedImage = image; self.detectedInfo = info; self.showingDetectionResult = true }
+                    DispatchQueue.main.async {
+                        self.captureResult = CaptureResult(image: image, info: info)
+                    }
                 }
             } else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.cameraManager.startSession() }
