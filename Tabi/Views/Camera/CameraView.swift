@@ -9,7 +9,7 @@ struct CameraView: View {
     @ObservedObject private var cameraManager = CameraManager.shared
     @State private var showingAnalysis = false
     @State private var capturedImage: UIImage?
-    @State private var analysisResult: MedicationAnalyzer.AnalysisResult?
+    @State private var analysisResult: PillVerifier.AnalysisResult?
     @State private var hasAttemptedSetup = false
 
     init(medication: Medication, medicationManager: MedicationManager, isPresented: Binding<Bool>) {
@@ -168,7 +168,7 @@ struct CameraView: View {
         print("📸 Capture button tapped")
         cameraManager.capturePhoto { image in
             if let image = image {
-                MedicationAnalyzer.shared.analyzePill(image: image, expectedMedication: self.medication) { result in
+                PillVerifier.shared.analyzePill(image: image, expectedMedication: self.medication) { result in
                     DispatchQueue.main.async {
                         self.capturedImage = image
                         self.analysisResult = result

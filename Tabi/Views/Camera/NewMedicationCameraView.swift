@@ -96,7 +96,7 @@ struct NewMedicationCameraView: View {
         cameraManager.capturePhoto { image in
             self.cameraManager.stopSession()
             if let image = image {
-                MedicationAnalyzer.shared.detectMedicationFromLabel(image: image) { info in
+                LabelScanner.shared.scanLabel(image: image) { info in
                     DispatchQueue.main.async {
                         self.captureResult = CaptureResult(image: image, info: info)
                     }

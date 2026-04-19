@@ -6,7 +6,7 @@ struct AnalysisResultView: View {
     let capturedImage: UIImage
     let medicationName: String
     let medicationPoints: Int
-    let analysisResult: MedicationAnalyzer.AnalysisResult?
+    let analysisResult: PillVerifier.AnalysisResult?
     let onContinue: () -> Void
     let onRetake: () -> Void
     let onCancel: () -> Void

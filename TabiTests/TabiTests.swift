@@ -323,7 +323,7 @@ struct TabiTests {
         
         // Perform actual detection
         let result = try await withCheckedThrowingContinuation { continuation in
-            MedicationAnalyzer.shared.detectMedicationFromLabel(image: image) { info in
+            LabelScanner.shared.scanLabel(image: image) { info in
                 continuation.resume(returning: info)
             }
         }
