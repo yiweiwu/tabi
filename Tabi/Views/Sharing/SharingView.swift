@@ -1,6 +1,7 @@
 import SwiftUI
 import Contacts
 import ContactsUI
+import MessageUI
 
 // MARK: - Contact Picker
 
@@ -34,6 +35,84 @@ struct ContactPicker: UIViewControllerRepresentable {
         func contactPickerDidCancel(_ picker: CNContactPickerViewController) {
             // Handle cancel
         }
+    }
+}
+
+// MARK: - Message Compose View Controller
+
+struct MessageComposeView: UIViewControllerRepresentable {
+    let recipients: [String]
+    let body: String
+    @Environment(\.dismiss) var dismiss
+    
+    func makeUIViewController(context: Context) -> MFMessageComposeViewController {
+        let controller = MFMessageComposeViewController()
+        controller.recipients = recipients
+        controller.body = body
+        controller.messageComposeDelegate = context.coordinator
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: MFMessageComposeViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
+        var parent: MessageComposeView
+        
+        init(_ parent: MessageComposeView) {
+            self.parent = parent
+        }
+        
+        func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
+            parent.dismiss()
+        }
+    }
+    
+    static var canSendText: Bool {
+        MFMessageComposeViewController.canSendText()
+    }
+}
+
+// MARK: - Mail Compose View Controller
+
+struct MailComposeView: UIViewControllerRepresentable {
+    let recipients: [String]
+    let subject: String
+    let body: String
+    @Environment(\.dismiss) var dismiss
+    
+    func makeUIViewController(context: Context) -> MFMailComposeViewController {
+        let controller = MFMailComposeViewController()
+        controller.setToRecipients(recipients)
+        controller.setSubject(subject)
+        controller.setMessageBody(body, isHTML: false)
+        controller.mailComposeDelegate = context.coordinator
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+        var parent: MailComposeView
+        
+        init(_ parent: MailComposeView) {
+            self.parent = parent
+        }
+        
+        func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
+            parent.dismiss()
+        }
+    }
+    
+    static var canSendMail: Bool {
+        MFMailComposeViewController.canSendMail()
     }
 }
 
@@ -206,6 +285,8 @@ struct ShareWithSomeoneView: View {
     @State private var phoneNumber = ""
     @State private var email = ""
     @State private var showShareSheet = false
+    @State private var showMessageCompose = false
+    @State private var showMailCompose = false
     @State private var showContactPicker = false
     @State private var selectedContact: CNContact?
     @State private var searchResults: [ContactSearchResult] = []
@@ -214,14 +295,7 @@ struct ShareWithSomeoneView: View {
     @FocusState private var isSearchFocused: Bool
     
     private var shareMessage: String {
-        var message = "I'd like to share my medication list with you via Tabi.\n\n"
-        
-        if !phoneNumber.isEmpty {
-            message += "Phone: \(phoneNumber)\n"
-        }
-        if !email.isEmpty {
-            message += "Email: \(email)\n"
-        }
+        var message = "Here's the link to my med schedule.\n\n"
         
         message += "\nAccept this invitation to view my medication information."
         return message
@@ -442,7 +516,13 @@ struct ShareWithSomeoneView: View {
             
             // Send Button
             Button(action: {
-                showShareSheet = true
+                if !phoneNumber.isEmpty && MessageComposeView.canSendText {
+                    showMessageCompose = true
+                } else if !email.isEmpty && MailComposeView.canSendMail {
+                    showMailCompose = true
+                } else {
+                    showShareSheet = true
+                }
             }) {
                 Text("Send Invitation")
                     .font(.headline)
@@ -458,6 +538,12 @@ struct ShareWithSomeoneView: View {
             .opacity((phoneNumber.isEmpty && email.isEmpty) ? 0.5 : 1.0)
             .sheet(isPresented: $showShareSheet) {
                 ActivityViewController(activityItems: [shareMessage])
+            }
+            .sheet(isPresented: $showMessageCompose) {
+                MessageComposeView(recipients: [phoneNumber], body: shareMessage)
+            }
+            .sheet(isPresented: $showMailCompose) {
+                MailComposeView(recipients: [email], subject: "Medication Schedule Invitation", body: shareMessage)
             }
             .sheet(isPresented: $showContactPicker) {
                 ContactPicker(selectedContact: $selectedContact)
@@ -625,34 +711,6 @@ struct SharingView: View {
                             }
                         }
                         .background(Color.tabiCard).cornerRadius(14).padding(.horizontal, 16)
-                    }
-
-                    // Export PDF
-                    HStack(spacing: 12) {
-                        Circle().fill(Color.tabiLavLight).frame(width: 40, height: 40)
-                            .overlay(Image(systemName: "doc.fill").font(.caption).foregroundColor(.tabiLavender))
-                        Text("Export PDF").font(.subheadline)
-                        Spacer()
-                        Image(systemName: "square.and.arrow.up").foregroundColor(.tabiGray)
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 14)
-                    .background(Color.tabiCard).cornerRadius(14)
-                    .padding(.horizontal, 16)
-                    
-                    // Share with your doctor
-                    Button(action: {
-                        // Share with doctor action
-                    }) {
-                        HStack(spacing: 12) {
-                            Circle().fill(Color.tabiLavLight).frame(width: 40, height: 40)
-                                .overlay(Image(systemName: "stethoscope").font(.caption).foregroundColor(.tabiLavender))
-                            Text("Share with your doctor").font(.subheadline).foregroundColor(.primary)
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundColor(.tabiGray).font(.caption)
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 14)
-                        .background(Color.tabiCard).cornerRadius(14)
-                        .padding(.horizontal, 16)
                     }
                 }
                 .padding(.top, 8)
