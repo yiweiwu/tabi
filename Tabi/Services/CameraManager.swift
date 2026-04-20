@@ -118,6 +118,14 @@ class CameraManager: NSObject, ObservableObject {
         }
         guard isAuthorized else { print("❌ Cannot setup - not authorized"); return }
 
+        #if targetEnvironment(simulator)
+        DispatchQueue.main.async {
+            self.isSetup = true
+            completion?()
+        }
+        return
+        #endif
+
         sessionQueue.async {
             for input in self.session.inputs { self.session.removeInput(input) }
             for output in self.session.outputs { self.session.removeOutput(output) }

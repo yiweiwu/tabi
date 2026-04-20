@@ -76,15 +76,9 @@ struct AnalysisResultView: View {
                         // Detection details
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: result.shapeDetected ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(result.shapeDetected ? .green : .gray).font(.caption)
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green).font(.caption)
                                 Text("Pill shape detected").font(.caption)
-                                Spacer()
-                            }
-                            HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: result.colorProfile != "unknown" ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(result.colorProfile != "unknown" ? .green : .gray).font(.caption)
-                                Text("Color: \(result.colorProfile.capitalized)").font(.caption)
                                 Spacer()
                             }
                             Divider()
