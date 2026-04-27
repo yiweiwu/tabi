@@ -44,6 +44,7 @@ struct MessageComposeView: UIViewControllerRepresentable {
     let recipients: [String]
     let body: String
     @Environment(\.dismiss) var dismiss
+    var onComplete: ((MessageComposeResult) -> Void)?
     
     func makeUIViewController(context: Context) -> MFMessageComposeViewController {
         let controller = MFMessageComposeViewController()
@@ -67,6 +68,7 @@ struct MessageComposeView: UIViewControllerRepresentable {
         }
         
         func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
+            parent.onComplete?(result)
             parent.dismiss()
         }
     }
@@ -83,6 +85,7 @@ struct MailComposeView: UIViewControllerRepresentable {
     let subject: String
     let body: String
     @Environment(\.dismiss) var dismiss
+    var onComplete: ((MFMailComposeResult) -> Void)?
     
     func makeUIViewController(context: Context) -> MFMailComposeViewController {
         let controller = MFMailComposeViewController()
@@ -107,6 +110,7 @@ struct MailComposeView: UIViewControllerRepresentable {
         }
         
         func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
+            parent.onComplete?(result)
             parent.dismiss()
         }
     }
@@ -292,12 +296,14 @@ struct ShareWithSomeoneView: View {
     @State private var searchResults: [ContactSearchResult] = []
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var showSuccessAlert = false
+    @State private var successMessage = ""
+    @State private var contactAccessGranted = false
+    @State private var hasRequestedPermission = false
     @FocusState private var isSearchFocused: Bool
     
     private var shareMessage: String {
-        var message = "Here's the link to my med schedule.\n\n"
-        
-        message += "\nAccept this invitation to view my medication information."
+        var message = "Here's the link to my med schedule.\n\nAccept this invitation to view my medication information."
         return message
     }
     
@@ -313,42 +319,87 @@ struct ShareWithSomeoneView: View {
         }
     }
     
+    private func requestContactAccess() {
+        // Only request once
+        guard !hasRequestedPermission else { return }
+        hasRequestedPermission = true
+        
+        Task.detached(priority: .utility) {
+            let store = CNContactStore()
+            let status = CNContactStore.authorizationStatus(for: .contacts)
+            
+            if status == .authorized {
+                await MainActor.run { contactAccessGranted = true }
+                return
+            }
+            
+            if status == .notDetermined {
+                do {
+                    let granted = try await store.requestAccess(for: .contacts)
+                    await MainActor.run { contactAccessGranted = granted }
+                } catch {
+                    print("Error requesting contact access: \(error)")
+                }
+            }
+        }
+    }
+    
+    private func clearFields() {
+        phoneNumber = ""
+        email = ""
+        searchText = ""
+        searchResults = []
+    }
+    
     private func searchContacts() {
-        guard !searchText.isEmpty else {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Quick validations without blocking
+        guard query.count >= 2 else {
             searchResults = []
             isSearching = false
             return
         }
         
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        
+        guard status == .authorized else {
+            if status == .notDetermined && !hasRequestedPermission {
+                requestContactAccess()
+            }
+            return
+        }
+        
+        // Mark as searching on main thread
         isSearching = true
         
-        Task {
+        // Do ALL the work in background
+        Task.detached(priority: .userInitiated) {
             let store = CNContactStore()
-            let keysToFetch = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactEmailAddressesKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
+            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactEmailAddressesKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
             
-            var results: [ContactSearchResult] = []
+            var foundContacts: [ContactSearchResult] = []
             
             do {
-                // First try name search
-                let predicate = CNContact.predicateForContacts(matchingName: searchText)
-                let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
+                let predicate = CNContact.predicateForContacts(matchingName: query)
+                let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys)
                 
-                for contact in contacts {
+                foundContacts = contacts.map { contact in
                     let fullName = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
-                    let result = ContactSearchResult(
+                    return ContactSearchResult(
                         contact: contact,
                         name: fullName.isEmpty ? "No Name" : fullName,
                         email: contact.emailAddresses.first.map { String($0.value) },
                         phoneNumber: contact.phoneNumbers.first?.value.stringValue
                     )
-                    results.append(result)
                 }
             } catch {
-                print("Error searching contacts by name: \(error.localizedDescription)")
+                print("Contact search error: \(error)")
             }
             
+            // Update UI only once at the end
             await MainActor.run {
-                self.searchResults = results
+                self.searchResults = foundContacts
                 self.isSearching = false
             }
         }
@@ -359,55 +410,55 @@ struct ShareWithSomeoneView: View {
         searchText = ""
         searchResults = []
         isSearchFocused = false
+        
+        // Automatically send invitation if we have a phone number
+        if !phoneNumber.isEmpty {
+            // Wait a brief moment for UI to update
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if MessageComposeView.canSendText {
+                    showMessageCompose = true
+                } else {
+                    successMessage = "SMS is not available. Using share sheet instead."
+                    showSuccessAlert = true
+                    showShareSheet = true
+                }
+            }
+        } else if !email.isEmpty {
+            // Fallback to email if no phone number
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if MailComposeView.canSendMail {
+                    showMailCompose = true
+                } else {
+                    successMessage = "Mail is not configured. Using share sheet instead."
+                    showSuccessAlert = true
+                    showShareSheet = true
+                }
+            }
+        } else {
+            // No contact info available
+            successMessage = "This contact has no phone number or email address."
+            showSuccessAlert = true
+        }
     }
     
     var body: some View {
         VStack(spacing: 0) {
             // Search Bar
             HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.tabiGray)
-                    .frame(width: 20, height: 20)
-                
-                TextField("Search contacts by name, email, or phone", text: $searchText)
-                    .focused($isSearchFocused)
-                    .textFieldStyle(.plain)
-                    .submitLabel(.search)
-                    .onSubmit {
-                        searchTask?.cancel()
-                        searchContacts()
-                    }
-                    .onChange(of: searchText) { _, newValue in
-                        searchTask?.cancel()
-                        searchTask = Task {
-                            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 second debounce
-                            if !Task.isCancelled {
-                                searchContacts()
-                            }
-                        }
-                    }
-                
-                if !searchText.isEmpty {
-                    Button(action: {
-                        searchTask?.cancel()
-                        searchText = ""
-                        searchResults = []
-                        isSearchFocused = false
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.tabiGray)
-                    }
-                    .buttonStyle(.plain)
-                }
-                
                 Button(action: {
                     showContactPicker = true
                 }) {
                     Image(systemName: "person.crop.circle.badge.plus")
                         .foregroundColor(.tabiLavender)
-                        .font(.title3)
+                        .font(.system(size: 28))
                 }
                 .buttonStyle(.plain)
+                
+                Text("Tap the contact icon to select a contact")
+                    .font(.subheadline)
+                    .foregroundColor(.tabiGray)
+                
+                Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -415,63 +466,6 @@ struct ShareWithSomeoneView: View {
             .cornerRadius(12)
             .padding(.horizontal, 16)
             .padding(.top, 16)
-            
-            // Search Results
-            if !searchResults.isEmpty {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(searchResults) { result in
-                            Button(action: {
-                                selectSearchResult(result)
-                            }) {
-                                HStack(spacing: 12) {
-                                    Circle()
-                                        .fill(Color.tabiLavLight)
-                                        .frame(width: 40, height: 40)
-                                        .overlay(
-                                            Text(result.name.isEmpty ? "?" : String(result.name.prefix(1)))
-                                                .font(.headline)
-                                                .foregroundColor(.tabiLavender)
-                                        )
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(result.name)
-                                            .font(.subheadline)
-                                            .foregroundColor(.primary)
-                                        
-                                        if let email = result.email {
-                                            Text(email)
-                                                .font(.caption)
-                                                .foregroundColor(.tabiGray)
-                                        }
-                                        
-                                        if let phone = result.phoneNumber {
-                                            Text(phone)
-                                                .font(.caption)
-                                                .foregroundColor(.tabiGray)
-                                        }
-                                    }
-                                    
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            
-                            if result.id != searchResults.last?.id {
-                                Divider().padding(.leading, 68)
-                            }
-                        }
-                    }
-                    .background(Color.tabiCard)
-                    .cornerRadius(12)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                }
-                .frame(maxHeight: 300)
-            }
             
             Spacer()
                 .allowsHitTesting(false)
@@ -516,10 +510,27 @@ struct ShareWithSomeoneView: View {
             
             // Send Button
             Button(action: {
-                if !phoneNumber.isEmpty && MessageComposeView.canSendText {
-                    showMessageCompose = true
-                } else if !email.isEmpty && MailComposeView.canSendMail {
-                    showMailCompose = true
+                // Prioritize phone if both are present
+                if !phoneNumber.isEmpty {
+                    print("Phone number entered: \(phoneNumber)")
+                    print("Can send text: \(MessageComposeView.canSendText)")
+                    if MessageComposeView.canSendText {
+                        showMessageCompose = true
+                    } else {
+                        successMessage = "SMS is not available on this device. Please use the share sheet."
+                        showSuccessAlert = true
+                        showShareSheet = true
+                    }
+                } else if !email.isEmpty {
+                    print("Email entered: \(email)")
+                    print("Can send mail: \(MailComposeView.canSendMail)")
+                    if MailComposeView.canSendMail {
+                        showMailCompose = true
+                    } else {
+                        successMessage = "Mail is not configured on this device. Please use the share sheet."
+                        showSuccessAlert = true
+                        showShareSheet = true
+                    }
                 } else {
                     showShareSheet = true
                 }
@@ -529,34 +540,109 @@ struct ShareWithSomeoneView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(Color.tabiLavender)
+                    .background(Color.purple)
                     .cornerRadius(12)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
             .disabled(phoneNumber.isEmpty && email.isEmpty)
             .opacity((phoneNumber.isEmpty && email.isEmpty) ? 0.5 : 1.0)
-            .sheet(isPresented: $showShareSheet) {
-                ActivityViewController(activityItems: [shareMessage])
-            }
-            .sheet(isPresented: $showMessageCompose) {
-                MessageComposeView(recipients: [phoneNumber], body: shareMessage)
-            }
-            .sheet(isPresented: $showMailCompose) {
-                MailComposeView(recipients: [email], subject: "Medication Schedule Invitation", body: shareMessage)
-            }
-            .sheet(isPresented: $showContactPicker) {
-                ContactPicker(selectedContact: $selectedContact)
-            }
-            .onChange(of: selectedContact) { _, newContact in
-                if let contact = newContact {
-                    updateFromContact(contact)
-                }
-            }
         }
         .background(Color.tabiBG)
         .navigationTitle("Share with")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showShareSheet) {
+            ActivityViewController(activityItems: [shareMessage])
+                .onDisappear {
+                    // Show confirmation after share sheet dismisses
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        successMessage = "Share sheet closed. If you shared the invitation, it has been sent!"
+                        showSuccessAlert = true
+                        clearFields()
+                    }
+                }
+        }
+        .sheet(isPresented: $showMessageCompose) {
+            MessageComposeView(recipients: [phoneNumber], body: shareMessage) { result in
+                print("Message compose result: \(result)")
+                DispatchQueue.main.async {
+                    switch result {
+                    case .sent:
+                        successMessage = "Invitation sent successfully via SMS to \(phoneNumber)!"
+                        showSuccessAlert = true
+                        clearFields()
+                    case .failed:
+                        successMessage = "Failed to send SMS invitation."
+                        showSuccessAlert = true
+                    case .cancelled:
+                        successMessage = "SMS invitation cancelled."
+                        showSuccessAlert = true
+                    @unknown default:
+                        break
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showMailCompose) {
+            MailComposeView(recipients: [email], subject: "Medication Schedule Invitation", body: shareMessage) { result in
+                print("Mail compose result: \(result)")
+                DispatchQueue.main.async {
+                    switch result {
+                    case .sent:
+                        successMessage = "Invitation sent successfully via email to \(email)!"
+                        showSuccessAlert = true
+                        clearFields()
+                    case .failed:
+                        successMessage = "Failed to send email invitation."
+                        showSuccessAlert = true
+                    case .cancelled:
+                        successMessage = "Email invitation cancelled."
+                        showSuccessAlert = true
+                    case .saved:
+                        successMessage = "Email invitation saved as draft."
+                        showSuccessAlert = true
+                    @unknown default:
+                        break
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showContactPicker, onDismiss: {
+            // This runs after the contact picker is fully dismissed
+            if let contact = selectedContact {
+                updateFromContact(contact)
+                
+                print("=== Contact Selected ===")
+                print("Name: \(contact.givenName) \(contact.familyName)")
+                print("Phone: \(phoneNumber)")
+                print("Email: \(email)")
+                print("Can send text: \(MessageComposeView.canSendText)")
+                
+                // Wait for picker sheet to fully close before opening SMS
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    if !phoneNumber.isEmpty {
+                        print("Opening SMS composer...")
+                        showMessageCompose = true
+                    } else if !email.isEmpty {
+                        print("Opening email composer...")
+                        showMailCompose = true
+                    } else {
+                        print("No contact info available")
+                        successMessage = "This contact has no phone number or email address."
+                        showSuccessAlert = true
+                    }
+                }
+            } else {
+                print("No contact was selected")
+            }
+        }) {
+            ContactPicker(selectedContact: $selectedContact)
+        }
+        .alert("Invitation Status", isPresented: $showSuccessAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(successMessage)
+        }
     }
 }
 
