@@ -83,6 +83,7 @@ struct DetectedMedicationInfo {
     var genericName: String
     var schedule: String
     var dosage: String
+    var frequencyPerDay: Int
     var scheduleTime: Date
     var allDetectedText: [String]
 }

@@ -58,9 +58,10 @@ private extension GeminiService {
                         "brandName": ["type": "string"],
                         "genericName": ["type": "string"],
                         "dosage": ["type": "string"],
-                        "schedule": ["type": "string"]
+                        "schedule": ["type": "string"],
+                        "frequencyPerDay": ["type": "integer"]
                     ],
-                    "required": ["brandName", "genericName", "dosage", "schedule"]
+                    "required": ["brandName", "genericName", "dosage", "schedule", "frequencyPerDay"]
                 ]
             ]
         ]
@@ -82,24 +83,22 @@ private extension GeminiService {
         let genericName = extracted["genericName"] as? String ?? ""
         let dosage = extracted["dosage"] as? String ?? ""
         let schedule = extracted["schedule"] as? String ?? ""
-        print("✅ Gemini: brand='\(brandName)' generic='\(genericName)' dosage='\(dosage)'")
+        let frequencyPerDay = extracted["frequencyPerDay"] as? Int ?? 1
+        print("✅ Gemini: brand='\(brandName)' generic='\(genericName)' dosage='\(dosage)' freq=\(frequencyPerDay)x/day")
         return DetectedMedicationInfo(
             brandName: brandName,
             genericName: genericName,
             schedule: schedule,
             dosage: dosage,
-            scheduleTime: scheduleTime(from: schedule),
+            frequencyPerDay: frequencyPerDay,
+            scheduleTime: primaryTime(for: frequencyPerDay),
             allDetectedText: ocrTexts
         )
     }
 
-    func scheduleTime(from schedule: String) -> Date {
-        let lower = schedule.lowercased()
-        let hour: Int
-        if lower.contains("morning") { hour = 8 }
-        else if lower.contains("evening") || lower.contains("night") || lower.contains("bedtime") { hour = 20 }
-        else if lower.contains("noon") || lower.contains("twice") { hour = 12 }
-        else { hour = 9 }
+    func primaryTime(for frequency: Int) -> Date {
+        // For multi-dose, 8am is the first dose; for once-daily, default 9am
+        let hour = frequency > 1 ? 8 : 9
         return Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
     }
 }
@@ -108,6 +107,6 @@ private extension GeminiService {
 
 extension DetectedMedicationInfo {
     static func empty(ocrTexts: [String] = []) -> DetectedMedicationInfo {
-        DetectedMedicationInfo(brandName: "", genericName: "", schedule: "", dosage: "", scheduleTime: Date(), allDetectedText: ocrTexts)
+        DetectedMedicationInfo(brandName: "", genericName: "", schedule: "", dosage: "", frequencyPerDay: 1, scheduleTime: Date(), allDetectedText: ocrTexts)
     }
 }
