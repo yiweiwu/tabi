@@ -7,89 +7,85 @@ struct TodayView: View {
     @State private var showingCamera = false
 
     var body: some View {
-        NavigationView {
-            ScrollView {
+        ScrollView {
+            VStack(spacing: 0) {
+
+                // ── Date + week strip ──────────────────────────────────
+                WeekStripHeader()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 20)
+
+                // ── Your Medications ──────────────────────────────────
                 VStack(spacing: 0) {
+                    HStack {
+                        Text("Your Medications")
+                            .font(.headline).fontWeight(.bold)
+                        Spacer()
+                        Button("Edit") {}
+                            .font(.subheadline).foregroundColor(.tabiOrange)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
 
-                    // ── Date + week strip ──────────────────────────────────
-                    WeekStripHeader()
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 20)
-
-                    // ── Your Medications ──────────────────────────────────
                     VStack(spacing: 0) {
-                        HStack {
-                            Text("Your Medications")
-                                .font(.headline).fontWeight(.bold)
-                            Spacer()
-                            Button("Edit") {}
-                                .font(.subheadline).foregroundColor(.tabiOrange)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 10)
-
-                        VStack(spacing: 0) {
-                            ForEach(medicationManager.medications) { med in
-                                TABIMedicationRow(
-                                    medication: med,
-                                    onTake: { medicationManager.recordMedicationTaken(med, points: med.points) },
-                                    onSkip: {}
-                                )
-                                if med.id != medicationManager.medications.last?.id {
-                                    Divider().padding(.leading, 80)
-                                }
-                            }
-                            Divider().padding(.leading, 80)
-                            // Add Medication row
-                            Button(action: { showingCamera = true }) {
-                                HStack(spacing: 12) {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color.tabiOrangeLight)
-                                        .frame(width: 52, height: 52)
-                                        .overlay(Image(systemName: "plus").font(.title3).foregroundColor(.tabiOrange))
-                                    Text("Add Medication")
-                                        .font(.subheadline).foregroundColor(.tabiOrange)
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16).padding(.vertical, 10)
+                        ForEach(medicationManager.medications) { med in
+                            TABIMedicationRow(
+                                medication: med,
+                                onTake: { medicationManager.recordMedicationTaken(med, points: med.points) },
+                                onSkip: {}
+                            )
+                            if med.id != medicationManager.medications.last?.id {
+                                Divider().padding(.leading, 80)
                             }
                         }
-                        .background(Color.tabiCard)
-                        .cornerRadius(14)
-                        .padding(.horizontal, 16)
+                        Divider().padding(.leading, 80)
+                        // Add Medication row
+                        Button(action: { showingCamera = true }) {
+                            HStack(spacing: 12) {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.tabiOrangeLight)
+                                    .frame(width: 52, height: 52)
+                                    .overlay(Image(systemName: "plus").font(.title3).foregroundColor(.tabiOrange))
+                                Text("Add Medication")
+                                    .font(.subheadline).foregroundColor(.tabiOrange)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                        }
                     }
-
-                    // ── Drug Interaction ──────────────────────────────────
-                    HStack(spacing: 12) {
-                        Circle().fill(Color.tabiLavLight).frame(width: 40, height: 40)
-                            .overlay(Image(systemName: "exclamationmark.triangle").font(.caption).foregroundColor(.tabiLavender))
-                        Text("Drug Interaction").font(.subheadline).foregroundColor(.primary)
-                        Spacer()
-                        Text("😊").font(.title2)
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 14)
-                    .background(Color.tabiCard).cornerRadius(14)
-                    .padding(.horizontal, 16).padding(.top, 14)
-
-                    // ── Upcoming Refills ──────────────────────────────────
-                    HStack(spacing: 12) {
-                        Circle().fill(Color.tabiLavLight).frame(width: 40, height: 40)
-                            .overlay(Image(systemName: "arrow.clockwise.circle").font(.caption).foregroundColor(.tabiLavender))
-                        Text("Upcoming Refills").font(.subheadline).foregroundColor(.primary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 14)
-                    .background(Color.tabiCard).cornerRadius(14)
-                    .padding(.horizontal, 16).padding(.top, 8)
-
-                    Spacer().frame(height: 32)
+                    .background(Color.tabiCard)
+                    .cornerRadius(14)
+                    .padding(.horizontal, 16)
                 }
+
+                // ── Drug Interaction ──────────────────────────────────
+                HStack(spacing: 12) {
+                    Circle().fill(Color.tabiLavLight).frame(width: 40, height: 40)
+                        .overlay(Image(systemName: "exclamationmark.triangle").font(.caption).foregroundColor(.tabiLavender))
+                    Text("Drug Interaction").font(.subheadline).foregroundColor(.primary)
+                    Spacer()
+                    Text("😊").font(.title2)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .background(Color.tabiCard).cornerRadius(14)
+                .padding(.horizontal, 16).padding(.top, 14)
+
+                // ── Upcoming Refills ──────────────────────────────────
+                HStack(spacing: 12) {
+                    Circle().fill(Color.tabiLavLight).frame(width: 40, height: 40)
+                        .overlay(Image(systemName: "arrow.clockwise.circle").font(.caption).foregroundColor(.tabiLavender))
+                    Text("Upcoming Refills").font(.subheadline).foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .background(Color.tabiCard).cornerRadius(14)
+                .padding(.horizontal, 16).padding(.top, 8)
+
+                Spacer().frame(height: 32)
             }
-            .background(Color.tabiBG)
-            .navigationTitle("")
-            .navigationBarHidden(true)
         }
+        .background(Color.tabiBG)
         .fullScreenCover(isPresented: $showingCamera) {
             NewMedicationCameraView(medicationManager: medicationManager, isPresented: $showingCamera)
         }

@@ -20,22 +20,51 @@ struct CameraView: View {
     @State private var simulatorImage: UIImage?
 
     var body: some View {
-        ZStack {
-            if kIsSimulator {
-                if let img = simulatorImage {
-                    Image(uiImage: img).resizable().scaledToFill().ignoresSafeArea()
+        let _ = print(">>> CameraView body - kIsSimulator: \(kIsSimulator), isAuthorized: \(cameraManager.isAuthorized)")
+        return ZStack {
+            // Background layer
+            Group {
+                if kIsSimulator {
+                    if let img = simulatorImage {
+                        Image(uiImage: img).resizable().scaledToFill()
+                    } else {
+                        Color.red
+                        Text("No image loaded").foregroundColor(.white).font(.title)
+                    }
+                } else if cameraManager.isAuthorized {
+                    CameraPreviewView(cameraManager: cameraManager)
                 } else {
-                    Color.red.ignoresSafeArea()
+                    permissionView
                 }
-            } else if cameraManager.isAuthorized {
-                CameraPreviewView(cameraManager: cameraManager).ignoresSafeArea()
-            } else {
-                permissionView
             }
-        }
-        .overlay {
+            .ignoresSafeArea()
+            
+            // Camera overlay (only when camera is ready)
             if kIsSimulator || cameraManager.isAuthorized {
+                let _ = print(">>> Rendering overlay - condition met")
                 cameraOverlay(onCapture: kIsSimulator ? simulatorCapture : deviceCapture)
+            } else {
+                let _ = print(">>> NOT rendering overlay")
+            }
+            
+            // Back button - ALWAYS visible
+            VStack {
+                HStack {
+                    Button(action: { 
+                        print(">>> Back button tapped")
+                        isPresented = false 
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+                    Spacer()
+                }
+                .padding()
+                Spacer()
             }
         }
         .onAppear {
@@ -131,12 +160,21 @@ struct CameraView: View {
     // MARK: - Shared UI
 
     private func cameraOverlay(onCapture: @escaping () -> Void) -> some View {
-        VStack {
+        let _ = print(">>> cameraOverlay is being rendered")
+        return VStack {
             HStack {
-                Button(action: { isPresented = false }) {
-                    Image(systemName: "xmark").font(.title2).foregroundColor(.white)
-                        .padding().background(Color.black.opacity(0.5)).clipShape(Circle())
+                Button(action: { 
+                    print(">>> Back button tapped")
+                    isPresented = false 
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.red.opacity(0.8))  // Changed to red for visibility
+                        .clipShape(Circle())
                 }
+                .frame(width: 60, height: 60)  // Explicit size
                 Spacer()
                 VStack {
                     Text("Position pill in center").font(.headline).foregroundColor(.white)
@@ -146,7 +184,7 @@ struct CameraView: View {
                 Circle().fill(Color.clear).frame(width: 44, height: 44)
             }
             .padding()
-            .background(LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.7), Color.clear]), startPoint: .top, endPoint: .bottom))
+            .background(Color.blue.opacity(0.3))  // Debug background
 
             Spacer()
 

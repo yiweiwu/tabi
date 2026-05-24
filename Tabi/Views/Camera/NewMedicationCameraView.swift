@@ -23,60 +23,41 @@ struct NewMedicationCameraView: View {
     @State private var simulatorImage: UIImage?
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
-            if kNewMedIsSimulator {
-                if let img = simulatorImage {
-                    Image(uiImage: img).resizable().scaledToFill().ignoresSafeArea()
+
+            Group {
+                if kNewMedIsSimulator {
+                    if let img = simulatorImage {
+                        Image(uiImage: img).resizable().scaledToFill()
+                    } else {
+                        Color.red
+                    }
+                } else if cameraManager.isAuthorized {
+                    CameraPreviewView(cameraManager: cameraManager)
                 } else {
-                    Color.red.ignoresSafeArea()
+                    permissionView
                 }
-            } else if cameraManager.isAuthorized {
-                CameraPreviewView(cameraManager: cameraManager).ignoresSafeArea()
-            } else {
-                permissionView
             }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
+            .ignoresSafeArea()
+
             if kNewMedIsSimulator || cameraManager.isAuthorized {
-                HStack {
-                    Button { isPresented = false } label: {
-                        Image(systemName: "xmark").font(.title2).foregroundColor(.white)
-                            .padding().background(Color.black.opacity(0.5)).clipShape(Circle())
-                    }
-                    Spacer()
-                    VStack {
-                        Text("Scan Prescription Label").font(.headline).foregroundColor(.white)
-                        Text(kNewMedIsSimulator ? "Simulator — using test image" : "Position label in frame")
-                            .font(.caption).foregroundColor(kNewMedIsSimulator ? .tabiOrange : .white.opacity(0.8))
-                    }
-                    Spacer()
-                    Circle().fill(Color.clear).frame(width: 44, height: 44)
-                }
-                .padding()
-                .background(LinearGradient(colors: [Color.black.opacity(0.8), Color.clear], startPoint: .top, endPoint: .bottom))
+                scanOverlay
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if kNewMedIsSimulator {
-                Button(action: simulatorCapture) {
-                    ZStack {
-                        Circle().fill(Color.tabiOrange).frame(width: 80, height: 80)
-                        Circle().stroke(Color.tabiOrange.opacity(0.4), lineWidth: 6).frame(width: 100, height: 100)
-                        Image(systemName: "camera.fill").font(.title2).foregroundColor(.white)
-                    }
-                }
-                .padding(.bottom, 20)
-            } else if cameraManager.isAuthorized {
-                Button(action: deviceCapture) {
-                    ZStack {
-                        Circle().fill(Color.tabiOrange).frame(width: 80, height: 80)
-                        Circle().stroke(Color.tabiOrange.opacity(0.4), lineWidth: 6).frame(width: 100, height: 100)
-                        Image(systemName: "camera.fill").font(.title2).foregroundColor(.white)
-                    }
-                }
-                .padding(.bottom, 20)
+
+            // Back button — rendered last so it sits above scanOverlay's gradient.
+            // Shown in every state (including permission view) so the user can always exit.
+            Button(action: { isPresented = false }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.black.opacity(0.6))
+                    .clipShape(Circle())
             }
+            .padding(.leading, 16)
+            .padding(.top, 8)
+            .zIndex(1)
         }
         .onAppear {
             if kNewMedIsSimulator {
@@ -100,7 +81,16 @@ struct NewMedicationCameraView: View {
             DetectedMedicationView(image: result.image, detectedInfo: result.info,
                 onSave: { finalInfo in
                     let idx = medicationManager.medications.count
-                    let newMed = Medication(name: finalInfo.brandName.isEmpty ? finalInfo.genericName : finalInfo.brandName, genericName: finalInfo.genericName, type: "Tablet", emoji: "💊", dosageTime: finalInfo.scheduleTime, dosage: finalInfo.dosage, scheduleLabel: "Every Day", points: 10, colorIndex: idx)
+                    let newMed = Medication(
+                        name: finalInfo.brandName.isEmpty ? finalInfo.genericName : finalInfo.brandName,
+                        genericName: finalInfo.genericName,
+                        type: "Tablet", emoji: "💊",
+                        dosageTime: finalInfo.scheduleTime,
+                        dosage: finalInfo.dosage,
+                        scheduleLabel: "Every Day",
+                        points: 10,
+                        colorIndex: idx
+                    )
                     medicationManager.medications.append(newMed)
                     let schedule = MedicationScheduleParser.parse(info: finalInfo, medication: newMed)
                     CalendarPersistenceManager.shared.save(schedule: schedule)
@@ -111,29 +101,39 @@ struct NewMedicationCameraView: View {
         }
     }
 
-    // MARK: - Simulator
-
-    private var simulatorOverlay: some View {
-        VStack {
-            HStack {
-                Button { isPresented = false } label: {
-                    Image(systemName: "xmark").font(.title2).foregroundColor(.white)
-                        .padding().background(Color.black.opacity(0.5)).clipShape(Circle())
-                }
-                Spacer()
-                VStack {
-                    Text("Scan Prescription Label").font(.headline).foregroundColor(.white)
-                    Text("Simulator — using test image").font(.caption).foregroundColor(.tabiOrange)
-                }
-                Spacer()
-                Circle().fill(Color.clear).frame(width: 44, height: 44)
+    private var scanOverlay: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 4) {
+                Text("Scan Prescription Label")
+                    .font(.headline).foregroundColor(.white)
+                Text(kNewMedIsSimulator ? "Simulator — test image" : "Position label in frame")
+                    .font(.caption)
+                    .foregroundColor(kNewMedIsSimulator ? .tabiOrange : .white.opacity(0.8))
             }
-            .padding(.horizontal)
-            .padding(.top, 60)
-            .padding(.bottom, 12)
-            .background(LinearGradient(colors: [Color.black.opacity(0.7), Color.clear], startPoint: .top, endPoint: .bottom))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                LinearGradient(colors: [Color.black.opacity(0.8), Color.clear],
+                               startPoint: .top, endPoint: .bottom)
+            )
+
             Spacer()
-            Button(action: simulatorCapture) {
+
+            if !kNewMedIsSimulator {
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.tabiOrange.opacity(0.85),
+                            style: StrokeStyle(lineWidth: 3, dash: [10, 5]))
+                    .frame(width: 300, height: 200)
+                    .overlay(VStack(spacing: 8) {
+                        Image(systemName: "doc.text.viewfinder")
+                            .font(.system(size: 40)).foregroundColor(.tabiOrange.opacity(0.85))
+                        Text("Position label here")
+                            .font(.caption).foregroundColor(.white.opacity(0.8))
+                    })
+                Spacer()
+            }
+
+            Button(action: kNewMedIsSimulator ? simulatorCapture : deviceCapture) {
                 ZStack {
                     Circle().fill(Color.tabiOrange).frame(width: 80, height: 80)
                     Circle().stroke(Color.tabiOrange.opacity(0.4), lineWidth: 6).frame(width: 100, height: 100)
@@ -147,48 +147,7 @@ struct NewMedicationCameraView: View {
     private func simulatorCapture() {
         guard let image = simulatorImage else { return }
         LabelScanner.shared.scanLabel(image: image) { info in
-            DispatchQueue.main.async {
-                self.captureResult = CaptureResult(image: image, info: info)
-            }
-        }
-    }
-
-    // MARK: - Device
-
-    private var deviceOverlay: some View {
-        VStack {
-            HStack {
-                Button { isPresented = false } label: {
-                    Image(systemName: "xmark").font(.title2).foregroundColor(.white)
-                        .padding().background(Color.black.opacity(0.5)).clipShape(Circle())
-                }
-                Spacer()
-                VStack {
-                    Text("Scan Prescription Label").font(.headline).foregroundColor(.white)
-                    Text("Position label in frame").font(.caption).foregroundColor(.white.opacity(0.8))
-                }
-                Spacer()
-                Circle().fill(Color.clear).frame(width: 44, height: 44)
-            }
-            .padding()
-            .background(LinearGradient(colors: [Color.black.opacity(0.7), Color.clear], startPoint: .top, endPoint: .bottom))
-            Spacer()
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.tabiOrange.opacity(0.85), style: StrokeStyle(lineWidth: 3, dash: [10, 5]))
-                .frame(width: 300, height: 200)
-                .overlay(VStack(spacing: 8) {
-                    Image(systemName: "doc.text.viewfinder").font(.system(size: 40)).foregroundColor(.tabiOrange.opacity(0.85))
-                    Text("Position label here").font(.caption).foregroundColor(.white.opacity(0.8))
-                })
-            Spacer()
-            Button(action: deviceCapture) {
-                ZStack {
-                    Circle().fill(Color.tabiOrange).frame(width: 80, height: 80)
-                    Circle().stroke(Color.tabiOrange.opacity(0.4), lineWidth: 6).frame(width: 100, height: 100)
-                    Image(systemName: "camera.fill").font(.title2).foregroundColor(.white)
-                }
-            }
-            .padding(.bottom, 50)
+            DispatchQueue.main.async { self.captureResult = CaptureResult(image: image, info: info) }
         }
     }
 
@@ -203,9 +162,7 @@ struct NewMedicationCameraView: View {
             self.cameraManager.stopSession()
             if let image = image {
                 LabelScanner.shared.scanLabel(image: image) { info in
-                    DispatchQueue.main.async {
-                        self.captureResult = CaptureResult(image: image, info: info)
-                    }
+                    DispatchQueue.main.async { self.captureResult = CaptureResult(image: image, info: info) }
                 }
             } else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.cameraManager.startSession() }
@@ -219,11 +176,13 @@ struct NewMedicationCameraView: View {
             VStack(spacing: 16) {
                 Text("Camera Access Required").font(.title2.bold()).foregroundColor(.white)
                 Text("TABI needs camera access to scan your medication labels.")
-                    .font(.body).foregroundColor(.white.opacity(0.8)).multilineTextAlignment(.center).padding(.horizontal, 32)
+                    .font(.body).foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center).padding(.horizontal, 32)
             }
             Button("Enable Camera") { cameraManager.requestPermission() }
                 .font(.headline).foregroundColor(.tabiOrange)
-                .frame(maxWidth: .infinity).padding().background(Color.white).cornerRadius(12).padding(.horizontal, 32)
+                .frame(maxWidth: .infinity).padding()
+                .background(Color.white).cornerRadius(12).padding(.horizontal, 32)
         }
     }
 }
