@@ -5,6 +5,7 @@ import SwiftUI
 struct TodayView: View {
     @ObservedObject var medicationManager: MedicationManager
     @State private var showingCamera = false
+    @State private var isEditing = false
 
     var body: some View {
         ScrollView {
@@ -22,7 +23,7 @@ struct TodayView: View {
                         Text("Your Medications")
                             .font(.headline).fontWeight(.bold)
                         Spacer()
-                        Button("Edit") {}
+                        Button(isEditing ? "Done" : "Edit") { isEditing.toggle() }
                             .font(.subheadline).foregroundColor(.tabiOrange)
                     }
                     .padding(.horizontal, 16)
@@ -30,13 +31,25 @@ struct TodayView: View {
 
                     VStack(spacing: 0) {
                         ForEach(medicationManager.medications) { med in
-                            TABIMedicationRow(
-                                medication: med,
-                                onTake: { medicationManager.recordMedicationTaken(med, points: med.points) },
-                                onSkip: {}
-                            )
+                            HStack(spacing: 0) {
+                                if isEditing {
+                                    Button(action: { medicationManager.remove(med) }) {
+                                        Image(systemName: "minus.circle.fill")
+                                            .font(.title3)
+                                            .foregroundColor(.red)
+                                    }
+                                    .padding(.leading, 16)
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                                }
+                                TABIMedicationRow(
+                                    medication: med,
+                                    onTake: { medicationManager.recordMedicationTaken(med, points: med.points) },
+                                    onSkip: {}
+                                )
+                            }
+                            .animation(.easeInOut(duration: 0.2), value: isEditing)
                             if med.id != medicationManager.medications.last?.id {
-                                Divider().padding(.leading, 80)
+                                Divider().padding(.leading, isEditing ? 60 : 80)
                             }
                         }
                         Divider().padding(.leading, 80)
