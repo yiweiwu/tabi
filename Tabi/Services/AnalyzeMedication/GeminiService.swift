@@ -97,9 +97,7 @@ private extension GeminiService {
     }
 
     func primaryTime(for frequency: Int) -> Date {
-        // For multi-dose, 8am is the first dose; for once-daily, default 9am
-        let hour = frequency > 1 ? 8 : 9
-        return Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
+        MedicationScheduleParser.scheduledTimes(for: frequency).first ?? Date()
     }
 }
 

@@ -26,6 +26,11 @@ class MedicationManager: ObservableObject {
     }
 
     func remove(_ medication: Medication) {
+        if medications.count == 1 {
+            NotificationScheduler.shared.cancelAll()
+        } else {
+            NotificationScheduler.shared.cancel(for: medication.id)
+        }
         medications.removeAll { $0.id == medication.id }
     }
 

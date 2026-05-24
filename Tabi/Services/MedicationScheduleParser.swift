@@ -14,7 +14,7 @@ class MedicationScheduleParser {
         )
     }
 
-    private static func scheduledTimes(for frequency: Int) -> [Date] {
+    static func scheduledTimes(for frequency: Int) -> [Date] {
         func t(_ h: Int) -> Date { Calendar.current.date(bySettingHour: h, minute: 0, second: 0, of: Date()) ?? Date() }
         switch frequency {
         case 2: return [t(8), t(20)]
