@@ -35,9 +35,21 @@ class MedicationManager: ObservableObject {
     }
 
     func recordMedicationTaken(_ medication: Medication, points: Int) {
-        if let i = medications.firstIndex(where: { $0.id == medication.id }) {
-            medications[i].lastTaken = Date(); medications[i].streak += 1
+        guard let i = medications.firstIndex(where: { $0.id == medication.id }) else { return }
+        var med = medications[i]
+        let isNewDay = med.lastTaken.map { !Calendar.current.isDateInToday($0) } ?? true
+        if isNewDay { med.takenToday = 0 }
+        med.takenToday += 1
+        med.lastTaken = Date()
+        med.streak += 1
+        medications[i] = med
+
+        if med.takenToday >= med.frequencyPerDay {
+            NotificationScheduler.shared.cancelRemainingToday(for: medication.id)
+        } else {
+            NotificationScheduler.shared.cancelNext(for: medication.id)
         }
+
         gameStats.totalPoints += points
         gameStats.currentStreak = medications.allSatisfy { !$0.isOverdue } ? gameStats.currentStreak + 1 : 0
         gameStats.level = gameStats.calculatedLevel

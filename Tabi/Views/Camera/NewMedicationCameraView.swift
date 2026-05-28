@@ -89,6 +89,7 @@ struct NewMedicationCameraView: View {
                         dosage: finalInfo.dosage,
                         scheduleLabel: "Every Day",
                         points: 10,
+                        frequencyPerDay: finalInfo.frequencyPerDay,
                         colorIndex: idx
                     )
                     medicationManager.medications.append(newMed)

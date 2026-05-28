@@ -43,8 +43,7 @@ struct TodayView: View {
                                 }
                                 TABIMedicationRow(
                                     medication: med,
-                                    onTake: { medicationManager.recordMedicationTaken(med, points: med.points) },
-                                    onSkip: {}
+                                    onTake: { medicationManager.recordMedicationTaken(med, points: med.points) }
                                 )
                             }
                             .animation(.easeInOut(duration: 0.2), value: isEditing)
@@ -156,7 +155,6 @@ struct WeekStripHeader: View {
 struct TABIMedicationRow: View {
     let medication: Medication
     let onTake: () -> Void
-    let onSkip: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -174,10 +172,11 @@ struct TABIMedicationRow: View {
                     .font(.subheadline).fontWeight(.semibold).foregroundColor(.primary).lineLimit(2)
                 Text(medication.type)
                     .font(.caption).foregroundColor(.tabiGray)
-                if !medication.dosage.isEmpty {
-                    Text(medication.dosage)
-                        .font(.caption).foregroundColor(.tabiGray)
-                }
+                let taken = medication.takenTodayCount
+                let allDone = taken >= medication.frequencyPerDay
+                Text(allDone ? "All done today" : "\(taken) of \(medication.frequencyPerDay) doses today")
+                    .font(.caption)
+                    .foregroundColor(allDone ? .tabiGreen : .tabiGray)
                 HStack(spacing: 4) {
                     Image(systemName: "calendar").font(.caption2).foregroundColor(.tabiGray)
                     Text(medication.scheduleLabel).font(.caption).foregroundColor(.tabiGray)
@@ -186,24 +185,18 @@ struct TABIMedicationRow: View {
 
             Spacer()
 
-            // Take / Skip
-            VStack(spacing: 6) {
-                Button(action: onTake) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "checkmark").font(.caption2.bold())
-                        Text("Taken").font(.caption.bold())
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Color.tabiGreen.opacity(0.12))
-                    .foregroundColor(.tabiGreen).cornerRadius(8)
+            let allDone = medication.takenTodayCount >= medication.frequencyPerDay
+            Button(action: onTake) {
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark").font(.caption2.bold())
+                    Text("Taken").font(.caption.bold())
                 }
-                Button(action: onSkip) {
-                    Text("Skip").font(.caption.bold())
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(Color(UIColor.systemGray5))
-                        .foregroundColor(.tabiGray).cornerRadius(8)
-                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(allDone ? Color(UIColor.systemGray5) : Color.tabiGreen.opacity(0.12))
+                .foregroundColor(allDone ? .tabiGray : .tabiGreen)
+                .cornerRadius(8)
             }
+            .disabled(allDone)
 
             Image(systemName: "chevron.right").font(.caption).foregroundColor(.tabiGray)
         }

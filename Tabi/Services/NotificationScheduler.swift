@@ -20,6 +20,41 @@ class NotificationScheduler {
         }
     }
 
+    func cancelNext(for medicationId: UUID) {
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { reqs in
+            let prefix = self.notificationPrefix(for: medicationId) + "."
+            let now = Date().timeIntervalSince1970
+            let nextId = reqs
+                .compactMap { req -> (String, Double)? in
+                    guard req.identifier.hasPrefix(prefix),
+                          let ts = Double(req.identifier.dropFirst(prefix.count)),
+                          ts > now else { return nil }
+                    return (req.identifier, ts)
+                }
+                .min(by: { $0.1 < $1.1 })
+                .map { $0.0 }
+            guard let id = nextId else { return }
+            center.removePendingNotificationRequests(withIdentifiers: [id])
+        }
+    }
+
+    func cancelRemainingToday(for medicationId: UUID) {
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { reqs in
+            let prefix = self.notificationPrefix(for: medicationId) + "."
+            let cal = Calendar.current
+            let todayIds = reqs
+                .filter { req in
+                    guard req.identifier.hasPrefix(prefix),
+                          let ts = Double(req.identifier.dropFirst(prefix.count)) else { return false }
+                    return cal.isDateInToday(Date(timeIntervalSince1970: ts))
+                }
+                .map { $0.identifier }
+            center.removePendingNotificationRequests(withIdentifiers: todayIds)
+        }
+    }
+
     func schedule(for s: DoseSchedule) {
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { reqs in
