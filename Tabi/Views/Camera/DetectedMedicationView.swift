@@ -18,15 +18,6 @@ struct DetectedMedicationView: View {
                         field("Brand Name", placeholder: "e.g., Lortab (leave empty if none)", binding: $detectedInfo.brandName)
                         field("Dosage", placeholder: "e.g., 1000 mcg", binding: $detectedInfo.dosage)
                         field("Schedule", placeholder: "e.g., Take 1 tablet daily", binding: $detectedInfo.schedule)
-                        if !detectedInfo.allDetectedText.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("All Detected Text").font(.caption).foregroundColor(.tabiGray)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    ForEach(detectedInfo.allDetectedText.prefix(8), id: \.self) { Text("• \($0)").font(.caption2).foregroundColor(.tabiGray) }
-                                }
-                                .padding().background(Color.tabiBG).cornerRadius(8)
-                            }
-                        }
                     }
                     .padding(.horizontal)
                     VStack(spacing: 12) {

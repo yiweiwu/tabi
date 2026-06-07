@@ -85,7 +85,6 @@ struct NewMedicationCameraView: View {
                         name: finalInfo.brandName.isEmpty ? finalInfo.genericName : finalInfo.brandName,
                         genericName: finalInfo.genericName,
                         type: "Tablet", emoji: "💊",
-                        dosageTime: finalInfo.scheduleTime,
                         dosage: finalInfo.dosage,
                         scheduleLabel: "Every Day",
                         points: 10,

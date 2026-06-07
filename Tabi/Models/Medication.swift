@@ -8,7 +8,6 @@ struct Medication: Identifiable, Codable {
     var genericName: String = ""
     var type: String           // "Tablet", "Eye Drops", "Capsule", etc.
     var emoji: String
-    var dosageTime: Date
     var dosage: String
     var scheduleLabel: String  // "Every Day", "Twice Daily", etc.
     var points: Int
@@ -33,7 +32,7 @@ struct Medication: Identifiable, Codable {
 
     var timeWithCountdown: String {
         let times = MedicationScheduleParser.scheduledTimes(for: frequencyPerDay)
-        let next = takenTodayCount < times.count ? times[takenTodayCount] : (times.first ?? dosageTime)
+        let next = takenTodayCount < times.count ? times[takenTodayCount] : times.first!
         let f = DateFormatter(); f.timeStyle = .short
         let t = f.string(from: next)
         let diff = next.timeIntervalSinceNow

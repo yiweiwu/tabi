@@ -284,11 +284,9 @@ struct WeekCalendarDotGrid: View {
     
     private func isMedicationActive(_ medication: Medication, on date: Date) -> Bool {
         let cal = Calendar.current
-        let startDate = cal.startOfDay(for: medication.dosageTime)
         let checkDate = cal.startOfDay(for: date)
         let today = cal.startOfDay(for: Date())
-        
-        return checkDate >= startDate && checkDate <= today
+        return checkDate <= today
     }
     
     private func iconForMedicationType(_ type: String) -> String {
