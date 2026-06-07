@@ -91,20 +91,16 @@ private extension GeminiService {
             schedule: schedule,
             dosage: dosage,
             frequencyPerDay: frequencyPerDay,
-            scheduleTime: primaryTime(for: frequencyPerDay),
             allDetectedText: ocrTexts
         )
     }
 
-    func primaryTime(for frequency: Int) -> Date {
-        MedicationScheduleParser.scheduledTimes(for: frequency).first ?? Date()
-    }
 }
 
 // MARK: - DetectedMedicationInfo convenience
 
 extension DetectedMedicationInfo {
     static func empty(ocrTexts: [String] = []) -> DetectedMedicationInfo {
-        DetectedMedicationInfo(brandName: "", genericName: "", schedule: "", dosage: "", frequencyPerDay: 1, scheduleTime: Date(), allDetectedText: ocrTexts)
+        DetectedMedicationInfo(brandName: "", genericName: "", schedule: "", dosage: "", frequencyPerDay: 1, allDetectedText: ocrTexts)
     }
 }
