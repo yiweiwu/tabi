@@ -95,7 +95,7 @@ struct NewMedicationCameraView: View {
                         lastTaken: passedCount > 0 ? Date() : nil,
                         colorIndex: idx
                     )
-                    medicationManager.medications.append(newMed)
+                    medicationManager.add(newMed)
                     let schedule = MedicationScheduleParser.parse(info: finalInfo, medication: newMed)
                     CalendarPersistenceManager.shared.save(schedule: schedule)
                     NotificationScheduler.shared.schedule(for: schedule)
