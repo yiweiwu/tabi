@@ -376,19 +376,8 @@ struct WeekCalendarDotGrid: View {
         let cal = Calendar.current
         let checkDate = cal.startOfDay(for: date)
         let today = cal.startOfDay(for: Date())
-        
-        // Show as active if the medication should be taken on this day
-        // This checks if the date is between start date and today (or future if scheduled)
         let startDate = cal.startOfDay(for: medication.dosageTime)
-        
-        // Check if this day is in the past (already taken) or future (scheduled)
-        if checkDate < startDate {
-            return false // Before medication started
-        }
-        
-        // For demonstration: show all medications as scheduled for each day
-        // In a real app, this would check the medication's frequency and schedule
-        return true
+        return checkDate >= startDate
     }
     
     private func iconForMedicationType(_ type: String) -> String {

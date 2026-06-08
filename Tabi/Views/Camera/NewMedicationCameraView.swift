@@ -81,18 +81,21 @@ struct NewMedicationCameraView: View {
             DetectedMedicationView(image: result.image, detectedInfo: result.info,
                 onSave: { finalInfo in
                     let idx = medicationManager.medications.count
+                    let times = MedicationScheduleParser.scheduledTimes(for: finalInfo.frequencyPerDay)
+                    let passedCount = times.filter { $0 < Date() }.count
                     let newMed = Medication(
                         name: finalInfo.brandName.isEmpty ? finalInfo.genericName : finalInfo.brandName,
                         genericName: finalInfo.genericName,
                         type: "Tablet", emoji: "💊",
-                        dosageTime: finalInfo.scheduleTime,
                         dosage: finalInfo.dosage,
                         scheduleLabel: "Every Day",
                         points: 10,
                         frequencyPerDay: finalInfo.frequencyPerDay,
+                        takenToday: passedCount,
+                        lastTaken: passedCount > 0 ? Date() : nil,
                         colorIndex: idx
                     )
-                    medicationManager.medications.append(newMed)
+                    medicationManager.add(newMed)
                     let schedule = MedicationScheduleParser.parse(info: finalInfo, medication: newMed)
                     CalendarPersistenceManager.shared.save(schedule: schedule)
                     NotificationScheduler.shared.schedule(for: schedule)

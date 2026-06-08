@@ -84,6 +84,5 @@ struct DetectedMedicationInfo {
     var schedule: String
     var dosage: String
     var frequencyPerDay: Int
-    var scheduleTime: Date
     var allDetectedText: [String]
 }

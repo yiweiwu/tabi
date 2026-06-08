@@ -58,6 +58,7 @@ tmp/
 *.env.local
 *.env.*.local
 Tabi/Config.swift
+Tabi/GoogleService-Info.plist
 
 # Optional: local-only configs
 *.xcconfig
