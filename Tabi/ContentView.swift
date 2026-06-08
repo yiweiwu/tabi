@@ -12,7 +12,7 @@ struct ContentView: View {
                 .tabItem { Label("Today", systemImage: "checklist") }
                 .tag(0)
 
-            SharingView()
+            SharingView(medicationManager: medicationManager)
                 .tabItem { Label("Sharing", systemImage: "person.2") }
                 .tag(1)
 
@@ -25,6 +25,7 @@ struct ContentView: View {
                 .tag(3)
         }
         .tint(.tabiOrange)
+        .preferredColorScheme(.light) // Force light mode
         .onAppear { NotificationScheduler.shared.requestPermission() }
     }
 }
@@ -36,3 +37,4 @@ struct ContentView_Previews: PreviewProvider {
         ContentView()
     }
 }
+

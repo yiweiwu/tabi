@@ -13,8 +13,24 @@ extension Color {
     static let tabiRed         = Color(red: 0.93, green: 0.27, blue: 0.27)  // missed
     static let tabiAmber       = Color(red: 0.97, green: 0.65, blue: 0.13)  // skipped / warning
     static let tabiGray        = Color(red: 0.56, green: 0.56, blue: 0.58)  // secondary text
-    static let tabiCard        = Color(UIColor.systemBackground)
-    static let tabiBG          = Color(UIColor.systemGroupedBackground)
+    
+    // Adaptive colors that work in both light and dark mode
+    static let tabiCard = Color(light: .white, dark: Color(white: 0.15))
+    static let tabiBG = Color(light: Color(red: 0.95, green: 0.95, blue: 0.97), dark: .black)
+}
+
+// Helper extension to support light/dark mode colors
+extension Color {
+    init(light: Color, dark: Color) {
+        self.init(UIColor { traitCollection in
+            switch traitCollection.userInterfaceStyle {
+            case .dark:
+                return UIColor(dark)
+            default:
+                return UIColor(light)
+            }
+        })
+    }
 }
 
 // Pill card icon background colors (as shown in Today wireframe)

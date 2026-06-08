@@ -284,15 +284,17 @@ struct ContactSearchResult: Identifiable {
 // MARK: - Share With Someone View
 
 struct ShareWithSomeoneView: View {
+    @ObservedObject var medicationManager: MedicationManager
+    var onConnectionAdded: ((SharedPerson) -> Void)?
     @Environment(\.dismiss) var dismiss
     @State private var searchText = ""
     @State private var phoneNumber = ""
     @State private var email = ""
-    @State private var showShareSheet = false
     @State private var showMessageCompose = false
     @State private var showMailCompose = false
     @State private var showContactPicker = false
     @State private var selectedContact: CNContact?
+    @State private var selectedContactName: String = ""
     @State private var searchResults: [ContactSearchResult] = []
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
@@ -302,9 +304,15 @@ struct ShareWithSomeoneView: View {
     @State private var hasRequestedPermission = false
     @FocusState private var isSearchFocused: Bool
     
-    private var shareMessage: String {
-        var message = "Here's the link to my med schedule.\n\nAccept this invitation to view my medication information."
-        return message
+    private var confirmationMessage: String {
+        let userName = medicationManager.userProfile.firstName.isEmpty ? "the user" : medicationManager.userProfile.firstName
+        let contactName = selectedContactName.isEmpty ? "there" : selectedContactName.components(separatedBy: " ").first ?? selectedContactName
+        
+        return """
+        Hi \(contactName), it's Tabi. You're now subscribed to \(userName)'s medication schedule.
+        
+        Remember: You'll be notified if \(userName) misses a pill so you can send a reminder.
+        """
     }
     
     private func updateFromContact(_ contact: CNContact) {
@@ -317,6 +325,10 @@ struct ShareWithSomeoneView: View {
         if let emailAddress = contact.emailAddresses.first {
             email = String(emailAddress.value)
         }
+        
+        // Save contact name
+        let fullName = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
+        selectedContactName = fullName.isEmpty ? "Contact" : fullName
     }
     
     private func requestContactAccess() {
@@ -349,6 +361,7 @@ struct ShareWithSomeoneView: View {
         email = ""
         searchText = ""
         searchResults = []
+        selectedContactName = ""
     }
     
     private func searchContacts() {
@@ -411,16 +424,15 @@ struct ShareWithSomeoneView: View {
         searchResults = []
         isSearchFocused = false
         
-        // Automatically send invitation if we have a phone number
+        // Automatically send confirmation if we have a phone number
         if !phoneNumber.isEmpty {
             // Wait a brief moment for UI to update
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if MessageComposeView.canSendText {
                     showMessageCompose = true
                 } else {
-                    successMessage = "SMS is not available. Using share sheet instead."
+                    successMessage = "SMS is not available. Cannot send confirmation."
                     showSuccessAlert = true
-                    showShareSheet = true
                 }
             }
         } else if !email.isEmpty {
@@ -429,9 +441,8 @@ struct ShareWithSomeoneView: View {
                 if MailComposeView.canSendMail {
                     showMailCompose = true
                 } else {
-                    successMessage = "Mail is not configured. Using share sheet instead."
+                    successMessage = "Mail is not configured. Cannot send confirmation."
                     showSuccessAlert = true
-                    showShareSheet = true
                 }
             }
         } else {
@@ -517,9 +528,8 @@ struct ShareWithSomeoneView: View {
                     if MessageComposeView.canSendText {
                         showMessageCompose = true
                     } else {
-                        successMessage = "SMS is not available on this device. Please use the share sheet."
+                        successMessage = "SMS is not available on this device."
                         showSuccessAlert = true
-                        showShareSheet = true
                     }
                 } else if !email.isEmpty {
                     print("Email entered: \(email)")
@@ -527,20 +537,17 @@ struct ShareWithSomeoneView: View {
                     if MailComposeView.canSendMail {
                         showMailCompose = true
                     } else {
-                        successMessage = "Mail is not configured on this device. Please use the share sheet."
+                        successMessage = "Mail is not configured on this device."
                         showSuccessAlert = true
-                        showShareSheet = true
                     }
-                } else {
-                    showShareSheet = true
                 }
             }) {
-                Text("Send Invitation")
+                Text("Add Connection")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(Color.purple)
+                    .background(Color.tabiLavender)
                     .cornerRadius(12)
             }
             .padding(.horizontal, 16)
@@ -551,31 +558,26 @@ struct ShareWithSomeoneView: View {
         .background(Color.tabiBG)
         .navigationTitle("Share with")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showShareSheet) {
-            ActivityViewController(activityItems: [shareMessage])
-                .onDisappear {
-                    // Show confirmation after share sheet dismisses
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        successMessage = "Share sheet closed. If you shared the invitation, it has been sent!"
-                        showSuccessAlert = true
-                        clearFields()
-                    }
-                }
-        }
         .sheet(isPresented: $showMessageCompose) {
-            MessageComposeView(recipients: [phoneNumber], body: shareMessage) { result in
+            MessageComposeView(recipients: [phoneNumber], body: confirmationMessage) { result in
                 print("Message compose result: \(result)")
                 DispatchQueue.main.async {
                     switch result {
                     case .sent:
-                        successMessage = "Invitation sent successfully via SMS to \(phoneNumber)!"
+                        let newConnection = SharedPerson(
+                            name: selectedContactName.isEmpty ? phoneNumber : selectedContactName,
+                            phoneNumber: phoneNumber,
+                            email: email.isEmpty ? nil : email
+                        )
+                        onConnectionAdded?(newConnection)
+                        successMessage = "Successfully added \(newConnection.name) to your shared connections!"
                         showSuccessAlert = true
                         clearFields()
                     case .failed:
-                        successMessage = "Failed to send SMS invitation."
+                        successMessage = "Failed to send confirmation message."
                         showSuccessAlert = true
                     case .cancelled:
-                        successMessage = "SMS invitation cancelled."
+                        successMessage = "Connection cancelled."
                         showSuccessAlert = true
                     @unknown default:
                         break
@@ -584,22 +586,28 @@ struct ShareWithSomeoneView: View {
             }
         }
         .sheet(isPresented: $showMailCompose) {
-            MailComposeView(recipients: [email], subject: "Medication Schedule Invitation", body: shareMessage) { result in
+            MailComposeView(recipients: [email], subject: "Medication Schedule Subscription", body: confirmationMessage) { result in
                 print("Mail compose result: \(result)")
                 DispatchQueue.main.async {
                     switch result {
                     case .sent:
-                        successMessage = "Invitation sent successfully via email to \(email)!"
+                        let newConnection = SharedPerson(
+                            name: selectedContactName.isEmpty ? email : selectedContactName,
+                            phoneNumber: phoneNumber.isEmpty ? nil : phoneNumber,
+                            email: email
+                        )
+                        onConnectionAdded?(newConnection)
+                        successMessage = "Successfully added \(newConnection.name) to your shared connections!"
                         showSuccessAlert = true
                         clearFields()
                     case .failed:
-                        successMessage = "Failed to send email invitation."
+                        successMessage = "Failed to send confirmation email."
                         showSuccessAlert = true
                     case .cancelled:
-                        successMessage = "Email invitation cancelled."
+                        successMessage = "Connection cancelled."
                         showSuccessAlert = true
                     case .saved:
-                        successMessage = "Email invitation saved as draft."
+                        successMessage = "Confirmation email saved as draft."
                         showSuccessAlert = true
                     @unknown default:
                         break
@@ -638,8 +646,13 @@ struct ShareWithSomeoneView: View {
         }) {
             ContactPicker(selectedContact: $selectedContact)
         }
-        .alert("Invitation Status", isPresented: $showSuccessAlert) {
-            Button("OK", role: .cancel) { }
+        .alert("Connection Status", isPresented: $showSuccessAlert) {
+            Button("OK", role: .cancel) {
+                // Only dismiss if connection was successfully added
+                if successMessage.contains("Successfully added") {
+                    dismiss()
+                }
+            }
         } message: {
             Text(successMessage)
         }
@@ -665,20 +678,38 @@ struct ActivityViewController: UIViewControllerRepresentable {
 
 // MARK: - Shared Person Model
 
-struct SharedPerson: Identifiable {
-    let id = UUID()
+struct SharedPerson: Identifiable, Codable {
+    let id: UUID
     let name: String
-    let time: String
-    let hasAlert: Bool
+    let phoneNumber: String?
+    let email: String?
+    let dateAdded: Date
+    
+    init(id: UUID = UUID(), name: String, phoneNumber: String? = nil, email: String? = nil, dateAdded: Date = Date()) {
+        self.id = id
+        self.name = name
+        self.phoneNumber = phoneNumber
+        self.email = email
+        self.dateAdded = dateAdded
+    }
+    
+    var displayTime: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: dateAdded)
+    }
 }
 
 // MARK: - Sharing View
 
 struct SharingView: View {
-    @State private var sharingPeople: [SharedPerson] = [
-        SharedPerson(name: "Dad", time: "9:23 AM", hasAlert: true),
-        SharedPerson(name: "Mom", time: "9:36 AM", hasAlert: false)
-    ]
+    @ObservedObject var medicationManager: MedicationManager
+    @State private var sharingPeople: [SharedPerson] = []
+    @State private var showDeleteConfirmation = false
+    @State private var personToDelete: SharedPerson?
+    @State private var isEditMode = false
+    
+    private let sharedConnectionsKey = "tabi.sharedConnections"
     
     var body: some View {
         NavigationView {
@@ -687,7 +718,7 @@ struct SharingView: View {
                     // Sharing Options
                     VStack(spacing: 0) {
                         // Share with Someone
-                        NavigationLink(destination: ShareWithSomeoneView()) {
+                        NavigationLink(destination: ShareWithSomeoneView(medicationManager: medicationManager, onConnectionAdded: addConnection)) {
                             HStack(spacing: 14) {
                                 Circle().fill(Color.tabiLavLight).frame(width: 50, height: 50)
                                     .overlay(Image(systemName: "person.badge.plus").font(.title3).foregroundColor(.tabiLavender))
@@ -723,80 +754,81 @@ struct SharingView: View {
                     .background(Color.tabiCard).cornerRadius(14).padding(.horizontal, 16)
                     
                     // Shared Connections
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Shared Connections").font(.headline).foregroundColor(.primary)
-                            .padding(.horizontal, 16)
-                        
-                        VStack(spacing: 0) {
-                            ForEach(sharingPeople) { person in
-                                VStack(spacing: 0) {
-                                    HStack(spacing: 14) {
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .fill(person.hasAlert
-                                                  ? LinearGradient(colors: [Color.tabiLavender.opacity(0.7), Color.tabiBlue.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                                  : LinearGradient(colors: [Color.tabiOrange.opacity(0.5), Color.tabiAmber.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                            .frame(width: 52, height: 52)
-                                            .overlay(Image(systemName: "person.fill").font(.title3).foregroundColor(.white))
-
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(person.name).font(.subheadline.bold())
-                                            if person.hasAlert {
-                                                Label("1 Alert", systemImage: "exclamationmark.triangle.fill")
-                                                    .font(.caption).foregroundColor(.tabiAmber)
-                                                Label("3 Changes", systemImage: "arrow.triangle.2.circlepath")
-                                                    .font(.caption).foregroundColor(.tabiGray)
-                                            } else {
-                                                Label("2 Changes", systemImage: "arrow.triangle.2.circlepath")
-                                                    .font(.caption).foregroundColor(.tabiGray)
-                                            }
-                                        }
-                                        Spacer()
-                                        Text(person.time).font(.caption).foregroundColor(.tabiGray)
-                                        Image(systemName: "chevron.right").font(.caption).foregroundColor(.tabiGray)
+                    if !sharingPeople.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Shared Connections").font(.headline).foregroundColor(.primary)
+                                Spacer()
+                                Button(isEditMode ? "Done" : "Edit") {
+                                    withAnimation {
+                                        isEditMode.toggle()
                                     }
-                                    .padding(.horizontal, 16).padding(.vertical, 12)
-                                    .background(Color.tabiCard)
-                                    
-                                    // Remove button for Dad
-                                    if person.name == "Dad" {
-                                        Button(action: {
-                                            withAnimation {
-                                                if let index = sharingPeople.firstIndex(where: { $0.id == person.id }) {
-                                                    sharingPeople.remove(at: index)
+                                }
+                                .foregroundColor(.tabiLavender)
+                                .font(.subheadline)
+                            }
+                            .padding(.horizontal, 16)
+                            
+                            VStack(spacing: 0) {
+                                ForEach(sharingPeople) { person in
+                                    VStack(spacing: 0) {
+                                        HStack(spacing: 14) {
+                                            // Delete button on left (edit mode)
+                                            if isEditMode {
+                                                Button(action: {
+                                                    personToDelete = person
+                                                    showDeleteConfirmation = true
+                                                }) {
+                                                    Image(systemName: "minus.circle.fill")
+                                                        .foregroundColor(.red)
+                                                        .font(.title3)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                            
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .fill(LinearGradient(colors: [Color.tabiLavender.opacity(0.7), Color.tabiBlue.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                                .frame(width: 52, height: 52)
+                                                .overlay(Image(systemName: "person.fill").font(.title3).foregroundColor(.white))
+
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(person.name).font(.subheadline.bold())
+                                                if let phone = person.phoneNumber {
+                                                    Label(phone, systemImage: "phone.fill")
+                                                        .font(.caption).foregroundColor(.tabiGray)
+                                                }
+                                                if let email = person.email {
+                                                    Label(email, systemImage: "envelope.fill")
+                                                        .font(.caption).foregroundColor(.tabiGray)
                                                 }
                                             }
-                                        }) {
-                                            Text("Remove this contact")
-                                                .font(.subheadline.bold())
-                                                .foregroundColor(.white)
-                                                .frame(maxWidth: .infinity)
-                                                .padding(.vertical, 12)
-                                                .background(Color.red)
-                                                .cornerRadius(8)
-                                        }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
-                                        .background(Color.tabiCard)
-                                    }
-                                }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        withAnimation {
-                                            if let index = sharingPeople.firstIndex(where: { $0.id == person.id }) {
-                                                sharingPeople.remove(at: index)
+                                            Spacer()
+                                            
+                                            if !isEditMode {
+                                                Text(person.displayTime).font(.caption).foregroundColor(.tabiGray)
+                                                Image(systemName: "chevron.right").font(.caption).foregroundColor(.tabiGray)
                                             }
                                         }
-                                    } label: {
-                                        Label("Remove", systemImage: "trash")
+                                        .padding(.horizontal, 16).padding(.vertical, 12)
+                                        .background(Color.tabiCard)
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        Button(role: .destructive) {
+                                            withAnimation {
+                                                removeConnection(person)
+                                            }
+                                        } label: {
+                                            Label("Remove", systemImage: "trash")
+                                        }
+                                    }
+                                    
+                                    if person.id != sharingPeople.last?.id { 
+                                        Divider().padding(.leading, 82) 
                                     }
                                 }
-                                
-                                if person.id != sharingPeople.last?.id { 
-                                    Divider().padding(.leading, 82) 
-                                }
                             }
+                            .background(Color.tabiCard).cornerRadius(14).padding(.horizontal, 16)
                         }
-                        .background(Color.tabiCard).cornerRadius(14).padding(.horizontal, 16)
                     }
                 }
                 .padding(.top, 8)
@@ -805,6 +837,69 @@ struct SharingView: View {
             .background(Color.tabiBG)
             .navigationTitle("Sharing")
         }
+        .onAppear {
+            loadConnections()
+        }
+        .alert("Remove Connection", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove", role: .destructive) {
+                if let person = personToDelete {
+                    withAnimation {
+                        removeConnection(person)
+                    }
+                    isEditMode = false
+                }
+            }
+        } message: {
+            if let person = personToDelete {
+                Text("Are you sure you want to remove \(person.name) from your shared connections?")
+            }
+        }
+    }
+    
+    private func loadConnections() {
+        guard let data = UserDefaults.standard.data(forKey: sharedConnectionsKey),
+              let decoded = try? JSONDecoder().decode([SharedPerson].self, from: data) else {
+            sharingPeople = []
+            return
+        }
+        sharingPeople = decoded.sorted { $0.dateAdded > $1.dateAdded }
+    }
+    
+    private func saveConnections() {
+        if let encoded = try? JSONEncoder().encode(sharingPeople) {
+            UserDefaults.standard.set(encoded, forKey: sharedConnectionsKey)
+        }
+    }
+    
+    private func addConnection(_ person: SharedPerson) {
+        sharingPeople.insert(person, at: 0)
+        saveConnections()
+    }
+    
+    private func removeConnection(_ person: SharedPerson) {
+        sharingPeople.removeAll { $0.id == person.id }
+        saveConnections()
+    }
+}
+
+// MARK: - Previews
+
+#Preview("Sharing View") {
+    SharingView(medicationManager: MedicationManager())
+}
+
+#Preview("Share With Someone") {
+    NavigationView {
+        ShareWithSomeoneView(medicationManager: MedicationManager(), onConnectionAdded: { person in
+            print("Added connection: \(person.name)")
+        })
+    }
+}
+
+#Preview("Ask Someone to Share") {
+    NavigationView {
+        AskSomeoneToShareView()
     }
 }
 
