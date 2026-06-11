@@ -29,7 +29,7 @@ class CalendarPersistenceManager {
             for t in schedule.scheduledTimes {
                 let c = cal.dateComponents([.hour, .minute], from: t)
                 if let d = cal.date(bySettingHour: c.hour ?? 9, minute: c.minute ?? 0, second: 0, of: current) {
-                    entries.append(DoseEntry(medicationId: schedule.medicationId, medicationName: schedule.medicationName, medicationEmoji: schedule.medicationEmoji, dosage: schedule.dosage, scheduledDate: d, status: .upcoming, colorIndex: schedule.colorIndex))
+                    entries.append(DoseEntry(medicationId: schedule.medicationId, medicationName: schedule.medicationName, dosage: schedule.dosage, scheduledDate: d, status: .upcoming))
                 }
             }
             current = cal.date(byAdding: .day, value: 1, to: current) ?? current

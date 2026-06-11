@@ -55,14 +55,11 @@ struct DoseEntry: Identifiable, Codable {
     var id = UUID()
     var medicationId: UUID
     var medicationName: String
-    var medicationEmoji: String
     var dosage: String
     var scheduledDate: Date
     var status: DoseStatus
-    var colorIndex: Int = 0
 
     var isActionable: Bool { if case .upcoming = status { return true }; return false }
-    var pillColor: Color { pillColors[colorIndex % pillColors.count] }
 }
 
 struct DoseSchedule {
