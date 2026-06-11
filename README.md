@@ -24,7 +24,11 @@ Get a free API key at [aistudio.google.com](https://aistudio.google.com). The ap
 
 > **Note:** The free tier has rate limits. Enable billing on your Google Cloud project for production use.
 
-### 3. Build & Run
+### 3. Add your Firebase config
+
+Obtain `GoogleService-Info.plist` from a team member and place it at `Tabi/GoogleService-Info.plist` (gitignored — never commit it).
+
+### 4. Build & Run
 
 Open `Tabi.xcodeproj` in Xcode and run on a device or simulator.
 
