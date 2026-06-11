@@ -1,11 +1,23 @@
 import Foundation
+import FirebaseFirestore
+import UIKit
 
 // MARK: - Calendar Persistence Manager
 
 class CalendarPersistenceManager {
     static let shared = CalendarPersistenceManager()
-    private let prefix = "tabi.doses."
+    private let db = Firestore.firestore()
+    private var cache: [UUID: [DoseEntry]] = [:]
+    private var listeners: [UUID: ListenerRegistration] = [:]
     private init() {}
+
+    private var userId: String {
+        UIDevice.current.identifierForVendor?.uuidString ?? "anonymous"
+    }
+
+    private func docRef(for id: UUID) -> DocumentReference {
+        db.collection("users").document(userId).collection("doses").document(id.uuidString)
+    }
 
     func save(schedule: DoseSchedule) {
         var entries = loadAll(forMedicationId: schedule.medicationId)
@@ -23,12 +35,11 @@ class CalendarPersistenceManager {
             current = cal.date(byAdding: .day, value: 1, to: current) ?? current
         }
         persist(entries, id: schedule.medicationId)
+        startListening(for: schedule.medicationId)
     }
 
     func loadAll(forMedicationId id: UUID) -> [DoseEntry] {
-        guard let data = UserDefaults.standard.data(forKey: prefix + id.uuidString),
-              let entries = try? JSONDecoder().decode([DoseEntry].self, from: data) else { return [] }
-        return entries
+        cache[id] ?? []
     }
 
     func loadEntries(forMonth date: Date, medications: [Medication]) -> [DoseEntry] {
@@ -55,7 +66,31 @@ class CalendarPersistenceManager {
         }
     }
 
+    func startListening(for id: UUID) {
+        guard listeners[id] == nil else { return }
+        listeners[id] = docRef(for: id).addSnapshotListener { [weak self] snapshot, _ in
+            guard let self, let data = snapshot?.data(),
+                  let entries = Self.decodeEntries(data) else { return }
+            self.cache[id] = entries
+        }
+    }
+
     private func persist(_ entries: [DoseEntry], id: UUID) {
-        if let data = try? JSONEncoder().encode(entries) { UserDefaults.standard.set(data, forKey: prefix + id.uuidString) }
+        cache[id] = entries
+        guard let dict = Self.encodeEntries(entries) else { return }
+        docRef(for: id).setData(dict)
+    }
+
+    private static func encodeEntries(_ entries: [DoseEntry]) -> [String: Any]? {
+        guard let data = try? JSONEncoder().encode(entries),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
+        return ["entries": arr]
+    }
+
+    private static func decodeEntries(_ dict: [String: Any]) -> [DoseEntry]? {
+        guard let arr = dict["entries"] as? [[String: Any]],
+              let data = try? JSONSerialization.data(withJSONObject: arr),
+              let entries = try? JSONDecoder().decode([DoseEntry].self, from: data) else { return nil }
+        return entries
     }
 }

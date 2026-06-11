@@ -2,6 +2,8 @@ import SwiftUI
 import Contacts
 import ContactsUI
 import MessageUI
+import FirebaseFirestore
+import UIKit
 
 // MARK: - Contact Picker
 
@@ -708,8 +710,12 @@ struct SharingView: View {
     @State private var showDeleteConfirmation = false
     @State private var personToDelete: SharedPerson?
     @State private var isEditMode = false
-    
-    private let sharedConnectionsKey = "tabi.sharedConnections"
+    @State private var listener: ListenerRegistration?
+
+    private var userId: String { UIDevice.current.identifierForVendor?.uuidString ?? "anonymous" }
+    private var collection: CollectionReference {
+        Firestore.firestore().collection("users").document(userId).collection("sharedPeople")
+    }
     
     var body: some View {
         NavigationView {
@@ -838,7 +844,14 @@ struct SharingView: View {
             .navigationTitle("Sharing")
         }
         .onAppear {
-            loadConnections()
+            listener = collection.addSnapshotListener { snapshot, _ in
+                guard let docs = snapshot?.documents else { return }
+                sharingPeople = docs.compactMap { Self.decodePerson($0.data()) }.sorted { $0.dateAdded > $1.dateAdded }
+            }
+        }
+        .onDisappear {
+            listener?.remove()
+            listener = nil
         }
         .alert("Remove Connection", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -857,29 +870,25 @@ struct SharingView: View {
         }
     }
     
-    private func loadConnections() {
-        guard let data = UserDefaults.standard.data(forKey: sharedConnectionsKey),
-              let decoded = try? JSONDecoder().decode([SharedPerson].self, from: data) else {
-            sharingPeople = []
-            return
-        }
-        sharingPeople = decoded.sorted { $0.dateAdded > $1.dateAdded }
-    }
-    
-    private func saveConnections() {
-        if let encoded = try? JSONEncoder().encode(sharingPeople) {
-            UserDefaults.standard.set(encoded, forKey: sharedConnectionsKey)
-        }
-    }
-    
     private func addConnection(_ person: SharedPerson) {
-        sharingPeople.insert(person, at: 0)
-        saveConnections()
+        guard let dict = Self.encodePerson(person) else { return }
+        collection.document(person.id.uuidString).setData(dict)
     }
-    
+
     private func removeConnection(_ person: SharedPerson) {
-        sharingPeople.removeAll { $0.id == person.id }
-        saveConnections()
+        collection.document(person.id.uuidString).delete()
+    }
+
+    private static func encodePerson(_ person: SharedPerson) -> [String: Any]? {
+        guard let data = try? JSONEncoder().encode(person),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return dict
+    }
+
+    private static func decodePerson(_ dict: [String: Any]) -> SharedPerson? {
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let person = try? JSONDecoder().decode(SharedPerson.self, from: data) else { return nil }
+        return person
     }
 }
 
