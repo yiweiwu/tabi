@@ -36,8 +36,11 @@ Tabi/
 │   ├── MedicationManager.swift
 │   └── CalendarViewModel.swift
 ├── Services/
+│   ├── AnalyzeMedication/
+│   │   ├── GeminiService.swift  — Gemini API for prescription label extraction
+│   │   ├── LabelScanner.swift   — Vision OCR
+│   │   └── PillVerifier.swift   — pill verification
 │   ├── CameraManager.swift    — AVFoundation singleton + CameraPreviewView + PhotoCaptureDelegate
-│   ├── MedicationAnalyzer.swift — Vision-based pill/label OCR
 │   ├── CalendarPersistenceManager.swift
 │   ├── MedicationScheduleParser.swift
 │   └── NotificationScheduler.swift
@@ -61,12 +64,12 @@ Tabi/
 
 ### Singletons
 - `CameraManager.shared` — persists across views so the AVCaptureSession is not torn down on navigation
-- `MedicationAnalyzer.shared` — Vision requests are stateless; singleton is fine
+- `GeminiService.shared` — Gemini API calls are stateless; singleton is fine
 - `CalendarPersistenceManager.shared`, `NotificationScheduler.shared`
 
 ### State management
-- `MedicationManager` is the source of truth for medications and game stats, passed down as `@ObservedObject`
-- `CalendarViewModel` is created as `@StateObject` inside `CalendarView`
+- `MedicationManager` is the source of truth for medications and game stats, passed down as `@ObservedObject`. Backed by Firestore — use `add(_:)` to add medications, never append directly to `medications`.
+- `CalendarViewModel` exists but is currently unused — `CalendarView` manages its own state directly.
 - Prefer `@ObservedObject` over re-creating ViewModels to avoid state loss
 
 ### Two camera flows
@@ -78,8 +81,8 @@ Always use the semantic colors from `DesignSystem.swift`:
 ```swift
 .tabiOrange, .tabiGreen, .tabiRed, .tabiAmber, .tabiBlue
 .tabiGray, .tabiLavender, .tabiLavLight, .tabiOrangeLight
-.tabiCard   // UIColor.systemBackground (respects dark mode)
-.tabiBG     // UIColor.systemGroupedBackground
+.tabiCard   // white in light mode, dark gray in dark mode
+.tabiBG     // light gray in light mode, black in dark mode
 ```
 
 ## Testing
@@ -103,9 +106,22 @@ When adding a new test image, place it in the project root alongside existing im
 - **Avoid**: Global state beyond the declared singletons. Don't create new singletons without a clear lifecycle reason.
 - **Formatting**: Match the surrounding file's style. No auto-formatting passes that reformat unrelated code.
 
+## Firestore Data Rules
+
+All app state is persisted to Firestore (no UserDefaults). Before adding a field to any `Codable` struct, ask:
+
+1. **Does it need to outlive the current app session?** If not, don't store it.
+2. **Is it derived from other stored fields?** If yes, compute it at read time instead.
+3. **Is it UI-only?** Colors, icons, display strings, and `colorIndex` belong in the view layer — not in Firestore documents.
+
+Stored models: `Medication`, `DoseEntry`, `SharedPerson`. Firestore paths:
+- `users/{deviceId}/medications/{id}`
+- `users/{deviceId}/doses/{medicationId}` (contains `entries` array)
+- `users/{deviceId}/sharedPeople/{id}`
+
 ## Common Gotchas
 
 - `DoseStatus` is a `Codable` enum with associated values — it has custom `encode`/`decode`. Don't add new cases without updating both.
 - `pillColors` is a module-level `let` in `DesignSystem.swift`, not a static member. Access it directly: `pillColors[index]`.
 - `CameraView` contains debug overlays (red box, manual start button). This is intentional for the `test-med-detection` work.
-- Sample data is loaded in `MedicationManager.init()` — there is no backend yet. Don't add network calls without discussing persistence strategy first.
+- `GoogleService-Info.plist` is gitignored — never commit it. Obtain it from a teammate.
