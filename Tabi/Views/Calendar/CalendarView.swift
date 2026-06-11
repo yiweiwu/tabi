@@ -106,18 +106,6 @@ struct WeekCalendarDotGrid: View {
     let medications: [Medication]
     let weekDays: [Date]
     
-    // Hardcoded demo data showing medication schedule for the week
-    private var mockMedicationSchedule: [(name: String, type: String, color: Color, schedule: [Int])] {
-        [
-            // Schedule: Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday (doses per day)
-            (name: "Aspirin", type: "Tablet", color: Color(red: 0.22, green: 0.38, blue: 0.62), schedule: [1, 1, 1, 1, 1, 1, 1]),
-            (name: "Vitamin D", type: "Capsule", color: Color(red: 0.94, green: 0.75, blue: 0.18), schedule: [1, 0, 1, 0, 1, 0, 1]),
-            (name: "Metformin", type: "Tablet", color: Color(red: 0.52, green: 0.38, blue: 0.72), schedule: [2, 2, 2, 2, 2, 0, 0]),
-            (name: "Lisinopril", type: "Tablet", color: Color(red: 0.20, green: 0.52, blue: 0.55), schedule: [1, 1, 1, 1, 1, 1, 1]),
-            (name: "Omega-3", type: "Capsule", color: Color(red: 0.91, green: 0.53, blue: 0.29), schedule: [1, 0, 0, 1, 0, 0, 1])
-        ]
-    }
-    
     var body: some View {
         VStack(spacing: 20) {
             // Header with gradient background
@@ -126,7 +114,7 @@ struct WeekCalendarDotGrid: View {
                     Text("Weekly Timeline")
                         .font(.title3.bold())
                         .foregroundColor(.primary)
-                    Text("\(mockMedicationSchedule.count) active medications")
+                    Text("\(medications.count) active medications")
                         .font(.caption)
                         .foregroundColor(.tabiGray)
                 }
@@ -153,14 +141,19 @@ struct WeekCalendarDotGrid: View {
                 Divider()
                     .padding(.bottom, 12)
                 
-                // Medication rows - using mock data
-                ForEach(Array(mockMedicationSchedule.enumerated()), id: \.offset) { index, medication in
-                    mockMedicationRow(name: medication.name, type: medication.type, color: medication.color, schedule: medication.schedule)
-                    
-                    if index < mockMedicationSchedule.count - 1 {
-                        Divider()
-                            .padding(.leading, 100)
-                            .padding(.vertical, 4)
+                if medications.isEmpty {
+                    Text("No medications added yet")
+                        .font(.caption)
+                        .foregroundColor(.tabiGray)
+                        .padding(.vertical, 20)
+                } else {
+                    ForEach(Array(medications.enumerated()), id: \.element.id) { index, medication in
+                        medicationRow(for: medication)
+                        if index < medications.count - 1 {
+                            Divider()
+                                .padding(.leading, 100)
+                                .padding(.vertical, 4)
+                        }
                     }
                 }
             }
@@ -172,75 +165,6 @@ struct WeekCalendarDotGrid: View {
                 .fill(Color.tabiCard)
                 .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 2)
         )
-    }
-    
-    private func mockMedicationRow(name: String, type: String, color: Color, schedule: [Int]) -> some View {
-        HStack(spacing: 8) {
-            // Medication name and color indicator
-            HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(LinearGradient(colors: [color, color.opacity(0.8)], startPoint: .top, endPoint: .bottom))
-                    .frame(width: 3, height: 36)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name)
-                        .font(.system(.caption, design: .rounded).weight(.semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    Text(type)
-                        .font(.system(size: 9))
-                        .foregroundColor(.tabiGray)
-                }
-            }
-            .frame(width: 88, alignment: .leading)
-            
-            // Week bars
-            HStack(spacing: 4) {
-                ForEach(Array(weekDays.enumerated()), id: \.offset) { dayIndex, day in
-                    mockDayBar(doses: schedule[dayIndex], color: color, day: day)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-        }
-        .padding(.vertical, 10)
-    }
-    
-    private func mockDayBar(doses: Int, color: Color, day: Date) -> some View {
-        let isToday = Calendar.current.isDateInToday(day)
-        let isPast = day < Calendar.current.startOfDay(for: Date())
-        let isActive = doses > 0
-        
-        return ZStack {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(
-                    isActive ?
-                        LinearGradient(colors: [color.opacity(0.9), color], startPoint: .top, endPoint: .bottom) :
-                        LinearGradient(colors: [Color.tabiLavLight.opacity(0.4)], startPoint: .top, endPoint: .bottom)
-                )
-                .frame(height: 40)
-            
-            if isToday {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.tabiOrange, lineWidth: 2)
-                    .frame(height: 40)
-            }
-            
-            if isActive {
-                if isPast {
-                    Image(systemName: "checkmark")
-                        .font(.caption.bold())
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
-                } else {
-                    Text("\(doses)")
-                        .font(.system(.caption2, design: .rounded).weight(.bold))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
-                }
-            }
-        }
-        .padding(.horizontal, 2)
     }
     
     private func dayHeaderView(for day: Date) -> some View {
@@ -313,10 +237,6 @@ struct WeekCalendarDotGrid: View {
         .padding(.vertical, 10)
     }
     
-    private func medicationRow(for medication: Medication, index: Int) -> some View {
-        medicationRow(for: medication)
-    }
-    
     private func dayBar(for medication: Medication, on day: Date) -> some View {
         let isActive = isMedicationActive(medication, on: day)
         let isToday = Calendar.current.isDateInToday(day)
@@ -346,17 +266,18 @@ struct WeekCalendarDotGrid: View {
                     .frame(height: 40)
             }
             
-            // Show frequency count or checkmark
             if isActive {
-                if isPast {
-                    // Show checkmark for past days (taken)
+                let allDone = isPast || (isToday && medication.takenTodayCount >= medication.frequencyPerDay)
+                if allDone {
                     Image(systemName: "checkmark")
                         .font(.caption.bold())
                         .foregroundColor(.white)
                         .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
                 } else {
-                    // Show frequency count for today/future days
-                    Text("\(medication.frequencyPerDay)")
+                    let count = isToday
+                        ? medication.frequencyPerDay - medication.takenTodayCount
+                        : medication.frequencyPerDay
+                    Text("\(count)")
                         .font(.system(.caption2, design: .rounded).weight(.bold))
                         .foregroundColor(.white)
                         .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
@@ -373,10 +294,8 @@ struct WeekCalendarDotGrid: View {
     }
     
     private func isMedicationActive(_ medication: Medication, on date: Date) -> Bool {
-        let cal = Calendar.current
-        let checkDate = cal.startOfDay(for: date)
-        let today = cal.startOfDay(for: Date())
-        return checkDate <= today
+        let entries = CalendarPersistenceManager.shared.loadAll(forMedicationId: medication.id)
+        return entries.contains { Calendar.current.isDate($0.scheduledDate, inSameDayAs: date) }
     }
     
     private func iconForMedicationType(_ type: String) -> String {

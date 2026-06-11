@@ -114,14 +114,53 @@ All app state is persisted to Firestore (no UserDefaults). Before adding a field
 2. **Is it derived from other stored fields?** If yes, compute it at read time instead.
 3. **Is it UI-only?** Colors, icons, display strings, and `colorIndex` belong in the view layer — not in Firestore documents.
 
+### Adding a new field is the last resort
+
+Before adding a field, always check whether the answer can be read from data that already exists:
+- `DoseEntry.scheduledDate` encodes when a medication became active (entries only exist from the add date forward) — no need for a separate `createdAt` field on `Medication`.
+- `medication.takenTodayCount` + `frequencyPerDay` encodes today's progress — no need to store a separate "remaining" count.
+
+Every extra field is a new source of discrepancy. If existing data can answer the question, use it. Only add a field when the information genuinely cannot be derived at read time.
+
 Stored models: `Medication`, `DoseEntry`, `SharedPerson`. Firestore paths:
 - `users/{deviceId}/medications/{id}`
 - `users/{deviceId}/doses/{medicationId}` (contains `entries` array)
 - `users/{deviceId}/sharedPeople/{id}`
 
+## Dose Tracking Logic
+
+These invariants must be preserved across any UI change.
+
+### Source of truth
+- `medication.takenTodayCount` — how many doses were taken **today**. Computed from `takenToday` (resets on a new day) and `lastTaken` (guards that `takenToday` only counts for today). Both are persisted in Firestore on `Medication`.
+- `medication.frequencyPerDay` — total doses scheduled per day, set from Gemini OCR at scan time.
+
+### Mid-day medication add
+When a new medication is added mid-day, doses whose scheduled time has already passed are pre-seeded as taken:
+```swift
+let times = MedicationScheduleParser.scheduledTimes(for: frequencyPerDay)
+let passedCount = times.filter { $0 < Date() }.count
+// takenToday: passedCount, lastTaken: passedCount > 0 ? Date() : nil
+```
+**Example**: twice-daily (8am, 8pm) added at 2pm → `passedCount = 1` (only 8am passed). `takenTodayCount = 1`, so 8pm still shows as remaining.
+
+### Display rules (Today view and Calendar view must agree)
+| State | Today view | Calendar bar |
+|---|---|---|
+| All doses taken today | "All done today" (green) | Checkmark |
+| Some doses taken today | "N of M doses today" | Remaining count (M − N) |
+| Future day | — | Total doses (M) |
+| Past day (medication was active) | — | Checkmark |
+| Medication not yet added on that day | — | Empty/gray |
+
+**Never show the total frequency count for today** — always show the remaining count. Use `frequencyPerDay - takenTodayCount` for today's bar, `frequencyPerDay` for future bars.
+
+### Calendar active-day check
+`WeekCalendarDotGrid` calls `CalendarPersistenceManager.shared.loadAll(forMedicationId:)` to determine if a medication was active on a given day. A day is active only if dose entries exist for it — meaning the medication had already been added by that date. Do **not** use a simple "any day before today" check, as that would incorrectly mark days before the medication was added.
+
 ## Common Gotchas
 
 - `DoseStatus` is a `Codable` enum with associated values — it has custom `encode`/`decode`. Don't add new cases without updating both.
 - `pillColors` is a module-level `let` in `DesignSystem.swift`, not a static member. Access it directly: `pillColors[index]`.
-- `CameraView` contains debug overlays (red box, manual start button). This is intentional for the `test-med-detection` work.
+- `Services/FirestoreHelpers.swift` provides `firestoreDict()` and `decoded(from:)` extensions on `Encodable`/`Decodable`. Use these instead of writing inline `JSONEncoder → JSONSerialization` in any new Firestore persistence code.
 - `GoogleService-Info.plist` is gitignored — never commit it. Obtain it from a teammate.

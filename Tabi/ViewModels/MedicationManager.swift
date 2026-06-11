@@ -29,6 +29,9 @@ class MedicationManager: ObservableObject {
             guard let self, let docs = snapshot?.documents else { return }
             DispatchQueue.main.async {
                 self.medications = docs.compactMap { Self.decode($0.data()) }
+                for med in self.medications {
+                    CalendarPersistenceManager.shared.startListening(for: med.id)
+                }
             }
         }
     }
@@ -75,17 +78,8 @@ class MedicationManager: ObservableObject {
         gameStats.level = gameStats.calculatedLevel
     }
 
-    private static func encode(_ med: Medication) -> [String: Any]? {
-        guard let data = try? JSONEncoder().encode(med),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return dict
-    }
-
-    private static func decode(_ dict: [String: Any]) -> Medication? {
-        guard let data = try? JSONSerialization.data(withJSONObject: dict),
-              let med = try? JSONDecoder().decode(Medication.self, from: data) else { return nil }
-        return med
-    }
+    private static func encode(_ med: Medication) -> [String: Any]? { med.firestoreDict() }
+    private static func decode(_ dict: [String: Any]) -> Medication? { Medication.decoded(from: dict) }
 }
 
 // MARK: - User Profile

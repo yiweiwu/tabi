@@ -20,15 +20,14 @@ struct CameraView: View {
     @State private var simulatorImage: UIImage?
 
     var body: some View {
-        let _ = print(">>> CameraView body - kIsSimulator: \(kIsSimulator), isAuthorized: \(cameraManager.isAuthorized)")
-        return ZStack {
+        ZStack {
             // Background layer
             Group {
                 if kIsSimulator {
                     if let img = simulatorImage {
                         Image(uiImage: img).resizable().scaledToFill()
                     } else {
-                        Color.red
+                        Color.black
                         Text("No image loaded").foregroundColor(.white).font(.title)
                     }
                 } else if cameraManager.isAuthorized {
@@ -38,33 +37,9 @@ struct CameraView: View {
                 }
             }
             .ignoresSafeArea()
-            
-            // Camera overlay (only when camera is ready)
+
             if kIsSimulator || cameraManager.isAuthorized {
-                let _ = print(">>> Rendering overlay - condition met")
                 cameraOverlay(onCapture: kIsSimulator ? simulatorCapture : deviceCapture)
-            } else {
-                let _ = print(">>> NOT rendering overlay")
-            }
-            
-            // Back button - ALWAYS visible
-            VStack {
-                HStack {
-                    Button(action: { 
-                        print(">>> Back button tapped")
-                        isPresented = false 
-                    }) {
-                        Image(systemName: "xmark")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.black.opacity(0.5))
-                            .clipShape(Circle())
-                    }
-                    Spacer()
-                }
-                .padding()
-                Spacer()
             }
         }
         .onAppear {
@@ -160,21 +135,16 @@ struct CameraView: View {
     // MARK: - Shared UI
 
     private func cameraOverlay(onCapture: @escaping () -> Void) -> some View {
-        let _ = print(">>> cameraOverlay is being rendered")
-        return VStack {
+        VStack {
             HStack {
-                Button(action: { 
-                    print(">>> Back button tapped")
-                    isPresented = false 
-                }) {
+                Button(action: { isPresented = false }) {
                     Image(systemName: "xmark")
                         .font(.title2)
                         .foregroundColor(.white)
                         .padding()
-                        .background(Color.red.opacity(0.8))  // Changed to red for visibility
+                        .background(Color.black.opacity(0.5))
                         .clipShape(Circle())
                 }
-                .frame(width: 60, height: 60)  // Explicit size
                 Spacer()
                 VStack {
                     Text("Position pill in center").font(.headline).foregroundColor(.white)
@@ -184,7 +154,7 @@ struct CameraView: View {
                 Circle().fill(Color.clear).frame(width: 44, height: 44)
             }
             .padding()
-            .background(Color.blue.opacity(0.3))  // Debug background
+            .background(LinearGradient(gradient: Gradient(colors: [Color.black.opacity(0.7), Color.clear]), startPoint: .top, endPoint: .bottom))
 
             Spacer()
 

@@ -879,17 +879,8 @@ struct SharingView: View {
         collection.document(person.id.uuidString).delete()
     }
 
-    private static func encodePerson(_ person: SharedPerson) -> [String: Any]? {
-        guard let data = try? JSONEncoder().encode(person),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return dict
-    }
-
-    private static func decodePerson(_ dict: [String: Any]) -> SharedPerson? {
-        guard let data = try? JSONSerialization.data(withJSONObject: dict),
-              let person = try? JSONDecoder().decode(SharedPerson.self, from: data) else { return nil }
-        return person
-    }
+    private static func encodePerson(_ person: SharedPerson) -> [String: Any]? { person.firestoreDict() }
+    private static func decodePerson(_ dict: [String: Any]) -> SharedPerson? { SharedPerson.decoded(from: dict) }
 }
 
 // MARK: - Previews
