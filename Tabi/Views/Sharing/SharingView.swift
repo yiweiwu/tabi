@@ -393,7 +393,7 @@ struct ShareWithSomeoneView: View {
             let store = CNContactStore()
             let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactEmailAddressesKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
             
-            var foundContacts: [ContactSearchResult] = []
+            let foundContacts: [ContactSearchResult]
             
             do {
                 let predicate = CNContact.predicateForContacts(matchingName: query)
@@ -410,6 +410,7 @@ struct ShareWithSomeoneView: View {
                 }
             } catch {
                 print("Contact search error: \(error)")
+                foundContacts = []
             }
             
             // Update UI only once at the end

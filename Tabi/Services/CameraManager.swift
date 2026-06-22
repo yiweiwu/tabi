@@ -151,7 +151,11 @@ class CameraManager: NSObject, ObservableObject {
             let output = AVCapturePhotoOutput()
             if self.session.canAddOutput(output) {
                 self.session.addOutput(output)
-                output.isHighResolutionCaptureEnabled = true
+                if #available(iOS 16.0, *) {
+                    output.maxPhotoDimensions = output.maxPhotoDimensions
+                } else {
+                    output.isHighResolutionCaptureEnabled = true
+                }
                 self.photoOutput = output
             }
 
@@ -172,7 +176,11 @@ class CameraManager: NSObject, ObservableObject {
         guard session.isRunning else { print("❌ Session not running - cannot capture"); completion(nil); return }
 
         let settings = AVCapturePhotoSettings()
-        settings.isHighResolutionPhotoEnabled = true
+        if #available(iOS 16.0, *) {
+            settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
+        } else {
+            settings.isHighResolutionPhotoEnabled = true
+        }
 
         currentPhotoDelegate = PhotoCaptureDelegate { image in
             completion(image)
@@ -192,8 +200,16 @@ struct CameraPreviewView: UIViewRepresentable {
 
         let previewLayer = AVCaptureVideoPreviewLayer(session: cameraManager.session)
         previewLayer.videoGravity = .resizeAspectFill
-        if let connection = previewLayer.connection, connection.isVideoOrientationSupported {
-            connection.videoOrientation = .portrait
+        if let connection = previewLayer.connection {
+            if #available(iOS 17.0, *) {
+                if connection.isVideoRotationAngleSupported(0) {
+                    connection.videoRotationAngle = 0
+                }
+            } else {
+                if connection.isVideoOrientationSupported {
+                    connection.videoOrientation = .portrait
+                }
+            }
         }
         view.layer.addSublayer(previewLayer)
 

@@ -1,5 +1,4 @@
 import SwiftUI
-import FirebaseFirestore
 import UIKit
 
 // MARK: - Medication Manager
@@ -9,41 +8,37 @@ class MedicationManager: ObservableObject {
     @Published var gameStats = GameStats()
     @Published var userProfile = UserProfile()
 
-    private let db = Firestore.firestore()
-    private var listener: ListenerRegistration?
+    private let userDefaults = UserDefaults.standard
+    private let medicationsKey = "savedMedications"
 
-    private var userId: String {
-        UIDevice.current.identifierForVendor?.uuidString ?? "anonymous"
+    init() { 
+        loadMedications()
     }
 
-    private var collection: CollectionReference {
-        db.collection("users").document(userId).collection("medications")
-    }
-
-    init() { startListening() }
-
-    deinit { listener?.remove() }
-
-    private func startListening() {
-        listener = collection.addSnapshotListener { [weak self] snapshot, _ in
-            guard let self, let docs = snapshot?.documents else { return }
-            DispatchQueue.main.async {
-                self.medications = docs.compactMap { Self.decode($0.data()) }
-                for med in self.medications {
-                    CalendarPersistenceManager.shared.startListening(for: med.id)
-                }
-            }
+    private func loadMedications() {
+        guard let data = userDefaults.data(forKey: medicationsKey),
+              let decoded = try? JSONDecoder().decode([Medication].self, from: data) else {
+            medications = []
+            return
         }
+        medications = decoded
+    }
+    
+    private func saveMedications() {
+        guard let encoded = try? JSONEncoder().encode(medications) else { return }
+        userDefaults.set(encoded, forKey: medicationsKey)
     }
 
     func add(_ medication: Medication) {
         medications.append(medication)
-        save(medication)
+        saveMedications()
     }
 
     private func save(_ medication: Medication) {
-        guard let dict = Self.encode(medication) else { return }
-        collection.document(medication.id.uuidString).setData(dict)
+        if let index = medications.firstIndex(where: { $0.id == medication.id }) {
+            medications[index] = medication
+        }
+        saveMedications()
     }
 
     func remove(_ medication: Medication) {
@@ -53,7 +48,7 @@ class MedicationManager: ObservableObject {
             NotificationScheduler.shared.cancel(for: medication.id)
         }
         medications.removeAll { $0.id == medication.id }
-        collection.document(medication.id.uuidString).delete()
+        saveMedications()
     }
 
     func recordMedicationTaken(_ medication: Medication, points: Int) {
@@ -77,9 +72,6 @@ class MedicationManager: ObservableObject {
         gameStats.currentStreak = medications.allSatisfy { !$0.isOverdue } ? gameStats.currentStreak + 1 : 0
         gameStats.level = gameStats.calculatedLevel
     }
-
-    private static func encode(_ med: Medication) -> [String: Any]? { med.firestoreDict() }
-    private static func decode(_ dict: [String: Any]) -> Medication? { Medication.decoded(from: dict) }
 }
 
 // MARK: - User Profile
