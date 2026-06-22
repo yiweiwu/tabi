@@ -702,6 +702,51 @@ struct SharedPerson: Identifiable, Codable {
     }
 }
 
+// MARK: - Scan QR Code View
+
+struct ScanQRCodeView: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            // Scan QR Code
+            VStack(spacing: 14) {
+                Image(systemName: "qrcode.viewfinder")
+                    .font(.system(size: 80))
+                    .foregroundColor(.tabiLavender)
+                Text("Scan QR Code")
+                    .font(.title2.bold())
+                Text("Point your camera at someone's Tabi QR code to connect with them.")
+                    .font(.subheadline)
+                    .foregroundColor(.tabiGray)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Divider().padding(.horizontal, 40).padding(.vertical, 36)
+
+            // My QR Code
+            VStack(spacing: 14) {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 70))
+                    .foregroundColor(.tabiLavender)
+                Text("My QR Code")
+                    .font(.title2.bold())
+                Text("Share your QR code so others can scan it to connect with you.")
+                    .font(.subheadline)
+                    .foregroundColor(.tabiGray)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Spacer()
+        }
+        .background(Color.tabiBG)
+        .navigationTitle("Scan QR Code")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - Sharing View
 
 struct SharingView: View {
@@ -740,7 +785,25 @@ struct SharingView: View {
                         .background(Color.tabiCard)
                         
                         Divider().padding(.leading, 80)
-                        
+
+                        // Scan QR Code
+                        NavigationLink(destination: ScanQRCodeView()) {
+                            HStack(spacing: 14) {
+                                Circle().fill(Color.tabiLavLight).frame(width: 50, height: 50)
+                                    .overlay(Image(systemName: "qrcode.viewfinder").font(.title3).foregroundColor(.tabiLavender))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Scan QR Code").font(.headline).foregroundColor(.primary)
+                                    Text("Scan someone's QR code to connect").font(.caption).foregroundColor(.tabiGray)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).foregroundColor(.tabiGray)
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 16)
+                        }
+                        .background(Color.tabiCard)
+
+                        Divider().padding(.leading, 80)
+
                         // Ask Someone to Share
                         NavigationLink(destination: AskSomeoneToShareView()) {
                             HStack(spacing: 14) {

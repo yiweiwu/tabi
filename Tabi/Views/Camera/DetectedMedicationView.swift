@@ -8,6 +8,24 @@ struct DetectedMedicationView: View {
     let onSave: (DetectedMedicationInfo) -> Void
     let onCancel: () -> Void
 
+    private let detectedSchedule: String
+    @State private var useCustomSchedule = false
+    @State private var customScheduleText = ""
+
+    init(image: UIImage, detectedInfo: DetectedMedicationInfo,
+         onSave: @escaping (DetectedMedicationInfo) -> Void,
+         onCancel: @escaping () -> Void) {
+        self.image = image
+        self._detectedInfo = State(initialValue: detectedInfo)
+        let times = MedicationScheduleParser.scheduledTimes(for: detectedInfo.frequencyPerDay)
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        self.detectedSchedule = times.map { formatter.string(from: $0) }.joined(separator: ", ")
+        self.onSave = onSave
+        self.onCancel = onCancel
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -17,11 +35,15 @@ struct DetectedMedicationView: View {
                         field("Generic Name", placeholder: "e.g., Hydrocodone-Acetaminophen", binding: $detectedInfo.genericName, bold: true)
                         field("Brand Name", placeholder: "e.g., Lortab (leave empty if none)", binding: $detectedInfo.brandName)
                         field("Dosage", placeholder: "e.g., 1000 mcg", binding: $detectedInfo.dosage)
-                        field("Schedule", placeholder: "e.g., Take 1 tablet daily", binding: $detectedInfo.schedule)
+                        scheduleField
                     }
                     .padding(.horizontal)
                     VStack(spacing: 12) {
-                        Button { onSave(detectedInfo) } label: {
+                        Button {
+                            var info = detectedInfo
+                            info.schedule = useCustomSchedule ? customScheduleText : detectedSchedule
+                            onSave(info)
+                        } label: {
                             Text("Save Medication").font(.headline).foregroundColor(.white)
                                 .frame(maxWidth: .infinity).padding().background(Color.tabiOrange).cornerRadius(12)
                         }
@@ -32,6 +54,57 @@ struct DetectedMedicationView: View {
             }
             .navigationTitle("Confirm Medication")
             .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    @ViewBuilder
+    private var scheduleField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Schedule").font(.caption).foregroundColor(.tabiGray)
+
+            Menu {
+                Button { useCustomSchedule = false } label: {
+                    HStack {
+                        Text("Default Schedule")
+                        if !useCustomSchedule { Image(systemName: "checkmark") }
+                    }
+                }
+                Button { useCustomSchedule = true } label: {
+                    HStack {
+                        Text("Custom Schedule")
+                        if useCustomSchedule { Image(systemName: "checkmark") }
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(useCustomSchedule ? "Custom Schedule" : "Default Schedule")
+                        .font(.body)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.tabiGray)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground))
+                .cornerRadius(6)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(.systemGray4)))
+            }
+
+            if useCustomSchedule {
+                TextField("e.g., Take 1 tablet daily", text: $customScheduleText)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+            } else {
+                Text(detectedSchedule.isEmpty ? "No schedule detected" : detectedSchedule)
+                    .font(.body)
+                    .foregroundColor(detectedSchedule.isEmpty ? .tabiGray : .primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(6)
+            }
         }
     }
 
