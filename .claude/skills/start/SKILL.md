@@ -30,8 +30,7 @@ Gets the cofounder onto a fresh branch from the latest main before they write an
 
 3. Ask the user: **"What are you working on?"** Use their answer to generate a short, lowercase, hyphenated branch name (e.g., "add login screen" → `add-login-screen`). Prepend their first name if you know it (e.g., `yiwei/add-login-screen`).
 
-   Show the branch name and confirm before creating it:
-   > "I'll create a branch called `yiwei/add-login-screen`. Does that sound right?"
+   If the branch name is obvious from context, just create it and tell the user afterward. Only ask for confirmation if the name is genuinely ambiguous.
 
 4. Run:
    ```bash
