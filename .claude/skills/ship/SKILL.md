@@ -16,7 +16,10 @@ Pushes the current branch, merges it into main, and cleans up. No review require
    If on `main`, stop and tell the user in plain language:
    > "You're on the main branch — there's nothing to ship here. Use `/start` to begin a new feature first."
 
-2. Ask the user to describe what they built:
+2. Get context about what was built. If the user already described their work earlier in the conversation, use that — confirm it briefly rather than asking again:
+   > "I'll document this as: [your summary]. Sound right?"
+
+   If no context is available yet, ask:
    > "What did you build or fix? Give me a sentence or two — I'll use it to document the changes."
 
    Store this as `<user_context>`. You'll use it for the commit message, PR description, and conflict resolution.
@@ -36,7 +39,19 @@ Pushes the current branch, merges it into main, and cleans up. No review require
    git push -u origin <branch>
    ```
 
-4. Create a PR using `<user_context>` as the body, then merge it:
+4. Before creating the PR, check that `gh` is available and authenticated:
+   ```bash
+   gh auth status
+   ```
+   If `gh` is not installed or not authenticated, tell the user:
+   > "I need to connect to GitHub once before I can ship your code. It only takes a minute:
+   > 1. In the message box at the bottom of this screen, type exactly: `! gh auth login` and press Enter
+   > 2. Press Enter to accept each question — it'll open a browser window to sign in to GitHub
+   > 3. Once you're signed in, come back here and run `/ship` again — I'll take care of the rest"
+
+   Then stop. Once they return after authenticating, pick up from step 4 and do everything for them.
+
+   Once authenticated, create a PR using `<user_context>` as the body, then merge it:
    ```bash
    gh pr create --title "<branch name, humanized>" --body "<user_context>"
    gh pr merge --squash --delete-branch --yes
