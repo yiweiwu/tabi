@@ -4,10 +4,4 @@
    <FileRef
       location = "self:">
    </FileRef>
-   <FileRef
-      location = "group:WelcomeToTabiPageView.swift">
-   </FileRef>
-   <FileRef
-      location = "group:ProfileSetupPageView.swift">
-   </FileRef>
 </Workspace>
