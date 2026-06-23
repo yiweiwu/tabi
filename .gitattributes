@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Treat Package.resolved as a union merge to avoid conflicts when multiple
+# branches bump the same SPM dependencies independently.
+Tabi.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved merge=union
