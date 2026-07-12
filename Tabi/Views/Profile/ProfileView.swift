@@ -800,6 +800,8 @@ struct SettingsView: View {
     @Binding var userProfile: UserProfile
     @Environment(\.dismiss) private var dismiss
     @StateObject private var locationManager = LocationManager()
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
+    @State private var showResetAlert = false
     
     let countries = [
         "United States", "Canada", "United Kingdom", "Australia", 
@@ -871,6 +873,17 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+                
+                Section("Developer") {
+                    Button(role: .destructive) {
+                        showResetAlert = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Reset Onboarding")
+                        }
+                    }
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -880,6 +893,15 @@ struct SettingsView: View {
                         dismiss()
                     }
                 }
+            }
+            .alert("Reset Onboarding?", isPresented: $showResetAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset", role: .destructive) {
+                    hasCompletedOnboarding = false
+                    // App will restart and show onboarding
+                }
+            } message: {
+                Text("The app will restart and show the onboarding flow again. This is for testing purposes only.")
             }
         }
         .onAppear {

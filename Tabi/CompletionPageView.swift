@@ -9,6 +9,24 @@ struct CompletionPageView: View {
     
     var body: some View {
         ZStack {
+            // Skip button
+            VStack {
+                HStack {
+                    Spacer()
+                    Button("Skip") {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            coordinator.completeOnboarding()
+                        }
+                    }
+                    .foregroundColor(.tabiGray)
+                    .font(.body)
+                    .padding(.top, 16)
+                    .padding(.trailing, 24)
+                }
+                Spacer()
+            }
+            .zIndex(1)
+            
             // Confetti background (optional decoration)
             ForEach(0..<20, id: \.self) { index in
                 Circle()

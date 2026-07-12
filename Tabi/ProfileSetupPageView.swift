@@ -10,7 +10,22 @@ struct ProfileSetupPageView: View {
     var body: some View {
         @Bindable var bindableCoordinator = coordinator
         
-        VStack(spacing: 40) {
+        VStack(spacing: 0) {
+            // Skip button
+            HStack {
+                Spacer()
+                Button("Skip") {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        coordinator.currentPage = .permissions
+                    }
+                }
+                .foregroundColor(.tabiGray)
+                .font(.body)
+                .padding(.top, 16)
+                .padding(.trailing, 24)
+            }
+            
+            VStack(spacing: 40) {
             Spacer()
             
             // Header
@@ -112,6 +127,7 @@ struct ProfileSetupPageView: View {
                 .padding(.bottom, 20)
         }
         .padding(.vertical, 40)
+        }
     }
 }
 

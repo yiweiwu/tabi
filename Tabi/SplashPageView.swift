@@ -3,11 +3,30 @@ import SwiftUI
 // MARK: - Splash Page (Tabi Logo)
 
 struct SplashPageView: View {
+    @Environment(OnboardingCoordinator.self) private var coordinator
     @State private var logoScale: CGFloat = 0.5
     @State private var logoOpacity: Double = 0.0
     
     var body: some View {
         ZStack {
+            // Skip button
+            VStack {
+                HStack {
+                    Spacer()
+                    Button("Skip") {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            coordinator.currentPage = .authentication
+                        }
+                    }
+                    .foregroundColor(.tabiGray)
+                    .font(.body)
+                    .padding(.top, 16)
+                    .padding(.trailing, 24)
+                }
+                Spacer()
+            }
+            .zIndex(1)
+            
             // Gradient background
             LinearGradient(
                 colors: [

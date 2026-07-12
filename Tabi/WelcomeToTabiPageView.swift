@@ -3,8 +3,25 @@ import SwiftUI
 // MARK: - Welcome to Tabi Page
 
 struct WelcomeToTabiPageView: View {
+    @Environment(OnboardingCoordinator.self) private var coordinator
+    
     var body: some View {
-        VStack(spacing: 40) {
+        VStack(spacing: 0) {
+            // Skip button
+            HStack {
+                Spacer()
+                Button("Skip") {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        coordinator.currentPage = .authentication
+                    }
+                }
+                .foregroundColor(.tabiGray)
+                .font(.body)
+                .padding(.top, 16)
+                .padding(.trailing, 24)
+            }
+            
+            VStack(spacing: 40) {
             Spacer()
             
             // App Logo/Icon
@@ -65,6 +82,7 @@ struct WelcomeToTabiPageView: View {
             Spacer()
         }
         .padding(.vertical, 40)
+        }
     }
 }
 
