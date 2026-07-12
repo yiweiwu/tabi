@@ -1,0 +1,111 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// IMPORTANT: This app currently has NO real Firebase Authentication.
+// The "Sign in with Apple/Google/Facebook/Email/Phone" buttons in
+// AuthenticationPageView.swift do not call any auth SDK - they just
+// advance onboarding. All Firestore paths are scoped by
+// UIDevice.identifierForVendor (a random per-install device UUID),
+// not by an authenticated request.auth.uid.
+//
+// Because of this, these rules CANNOT verify that a caller actually
+// owns the {deviceId} segment they are reading/writing - there is no
+// request.auth to check against. They only validate the shape of the
+// data being written. Anyone who obtains (or guesses) a deviceId UUID
+// could read or write that user's data. This is a prototype meant to
+// stop malformed writes and satisfy Firestore's default-deny posture,
+// not a substitute for real per-user authorization.
+//
+// Collection: users/{deviceId}/doses/{medicationId}
+// Document ID: medicationId (UUID string)
+// Fields:
+//   - entries: list (required) - list of dose entry maps, each with:
+//       - id: string (UUID)
+//       - medicationId: string (UUID)
+//       - medicationName: string
+//       - dosage: string
+//       - scheduledDate: number (seconds since 2001-01-01 reference date)
+//       - status: map { type: string ("upcoming"|"taken"|"skipped"|"missed"), date: number (optional) }
+//     NOTE: Firestore rules cannot iterate list contents, so individual
+//     entry fields inside the list are NOT deeply validated here - only
+//     the list itself (presence, type, size cap).
+//
+// Collection: users/{deviceId}/sharedPeople/{personId}
+// Document ID: personId (UUID string, matches SharedPerson.id)
+// Fields:
+//   - id: string (required, UUID)
+//   - name: string (required)
+//   - phoneNumber: string (optional)
+//   - email: string (optional)
+//   - dateAdded: number (required, seconds since 2001-01-01 reference date)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidOptionalString(field, maxLen) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidDosesDoc() {
+      return hasOnlyAllowedFields(['entries']) &&
+             hasRequiredFields(['entries']) &&
+             request.resource.data.entries is list &&
+             request.resource.data.entries.size() <= 5000;
+    }
+
+    function isValidSharedPerson() {
+      return hasOnlyAllowedFields(['id', 'name', 'phoneNumber', 'email', 'dateAdded']) &&
+             hasRequiredFields(['id', 'name', 'dateAdded']) &&
+             request.resource.data.id is string &&
+             request.resource.data.id.size() <= 100 &&
+             request.resource.data.name is string &&
+             request.resource.data.name.size() <= 200 &&
+             request.resource.data.dateAdded is number &&
+             isValidOptionalString('phoneNumber', 30) &&
+             isValidOptionalString('email', 200);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{deviceId} {
+      match /doses/{medicationId} {
+        allow read: if true;
+        allow create, update: if isValidDosesDoc();
+        allow delete: if true;
+      }
+
+      match /sharedPeople/{personId} {
+        allow read: if true;
+        allow create, update: if isValidSharedPerson();
+        allow delete: if true;
+      }
+    }
+
+    // Default deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
