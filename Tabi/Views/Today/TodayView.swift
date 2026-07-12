@@ -168,9 +168,9 @@ struct TABIMedicationRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(medication.timeWithCountdown)
                     .font(.caption).foregroundColor(.tabiGray)
-                Text(medication.name)
+                Text(medication.genericName)
                     .font(.subheadline).fontWeight(.semibold).foregroundColor(.primary).lineLimit(2)
-                Text(medication.type)
+                Text(medication.name)
                     .font(.caption).foregroundColor(.tabiGray)
                 let taken = medication.takenTodayCount
                 let allDone = taken >= medication.frequencyPerDay
