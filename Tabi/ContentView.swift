@@ -26,7 +26,10 @@ struct ContentView: View {
         }
         .tint(.tabiOrange)
         .preferredColorScheme(.light) // Force light mode
-        .onAppear { NotificationScheduler.shared.requestPermission() }
+        .onAppear {
+            NotificationScheduler.shared.requestPermission()
+            medicationManager.startMissedDoseMonitoring()
+        }
     }
 }
 

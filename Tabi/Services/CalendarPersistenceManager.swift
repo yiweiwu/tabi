@@ -20,18 +20,7 @@ class CalendarPersistenceManager {
     func save(schedule: DoseSchedule) {
         var entries = loadAll(forMedicationId: schedule.medicationId)
         entries.removeAll { if case .upcoming = $0.status { return true }; return false }
-        let cal = Calendar.current
-        var current = cal.startOfDay(for: schedule.startDate)
-        let end = cal.startOfDay(for: schedule.endDate)
-        while current <= end {
-            for t in schedule.scheduledTimes {
-                let c = cal.dateComponents([.hour, .minute], from: t)
-                if let d = cal.date(bySettingHour: c.hour ?? 9, minute: c.minute ?? 0, second: 0, of: current) {
-                    entries.append(DoseEntry(medicationId: schedule.medicationId, medicationName: schedule.medicationName, dosage: schedule.dosage, scheduledDate: d, status: .upcoming))
-                }
-            }
-            current = cal.date(byAdding: .day, value: 1, to: current) ?? current
-        }
+        entries.append(contentsOf: schedule.buildEntries())
         persist(entries, id: schedule.medicationId)
         startListening(for: schedule.medicationId)
     }
@@ -56,11 +45,35 @@ class CalendarPersistenceManager {
     }
 
     func markMissedIfOverdue(medications: [Medication]) {
-        let now = Date()
-        for med in medications {
-            var entries = loadAll(forMedicationId: med.id); var changed = false
-            for i in entries.indices { if case .upcoming = entries[i].status, entries[i].scheduledDate < now { entries[i].status = .missed; changed = true } }
-            if changed { persist(entries, id: med.id) }
+        for med in medications { checkMissed(for: med.id) }
+    }
+
+    // Flips overdue `.upcoming` entries to `.missed` and fires a caretaker
+    // alert for each one newly missed. See `applyingMissedStatus` for why a
+    // re-run (e.g. the listener re-firing after `persist` below) won't
+    // re-alert for a dose already marked missed.
+    private func checkMissed(for id: UUID) {
+        let (updated, newlyMissed) = loadAll(forMedicationId: id).applyingMissedStatus()
+        if !newlyMissed.isEmpty { persist(updated, id: id) }
+        for entry in newlyMissed { MissedDoseAlertService.shared.sendAlert(for: entry) }
+    }
+
+    // MARK: - Missed Dose Monitoring
+
+    private var missedCheckTimer: Timer?
+    private var medicationsProvider: (() -> [Medication])?
+
+    // Starts listening for every medication (so a cold launch picks up doses
+    // that went overdue while the app was closed) and re-scans every minute
+    // to catch doses that go overdue while the app sits open with no other
+    // Firestore writes to trigger the snapshot listener.
+    func startMonitoring(medicationsProvider: @escaping () -> [Medication]) {
+        self.medicationsProvider = medicationsProvider
+        for med in medicationsProvider() { startListening(for: med.id) }
+        missedCheckTimer?.invalidate()
+        missedCheckTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            guard let self, let meds = self.medicationsProvider?() else { return }
+            self.markMissedIfOverdue(medications: meds)
         }
     }
 
@@ -70,6 +83,7 @@ class CalendarPersistenceManager {
             guard let self, let data = snapshot?.data(),
                   let entries = Self.decodeEntries(data) else { return }
             self.cache[id] = entries
+            self.checkMissed(for: id)
         }
     }
 

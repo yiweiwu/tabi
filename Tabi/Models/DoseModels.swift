@@ -62,6 +62,25 @@ struct DoseEntry: Identifiable, Codable {
     var isActionable: Bool { if case .upcoming = status { return true }; return false }
 }
 
+extension Array where Element == DoseEntry {
+    // Flips overdue `.upcoming` entries to `.missed`. Only entries still
+    // `.upcoming` at the time of the check are eligible, so calling this
+    // again on an already-updated array returns an empty `newlyMissed` -
+    // that's what keeps missed-dose alerts from firing more than once
+    // per entry.
+    func applyingMissedStatus(now: Date = Date()) -> (updated: [DoseEntry], newlyMissed: [DoseEntry]) {
+        var updated = self
+        var newlyMissed: [DoseEntry] = []
+        for i in updated.indices {
+            if case .upcoming = updated[i].status, updated[i].scheduledDate < now {
+                updated[i].status = .missed
+                newlyMissed.append(updated[i])
+            }
+        }
+        return (updated, newlyMissed)
+    }
+}
+
 struct DoseSchedule {
     let medicationId: UUID
     let medicationName: String
@@ -71,6 +90,30 @@ struct DoseSchedule {
     let scheduledTimes: [Date]
     let startDate: Date
     let endDate: Date
+
+    // Times that already passed on the add day are seeded as `.taken`,
+    // mirroring the Medication.takenToday pre-seed in
+    // NewMedicationCameraView - otherwise the missed-dose check would fire
+    // a caretaker alert for a dose that predates when the medication was
+    // even added.
+    func buildEntries() -> [DoseEntry] {
+        let cal = Calendar.current
+        let addDay = cal.startOfDay(for: startDate)
+        var current = addDay
+        let end = cal.startOfDay(for: endDate)
+        var entries: [DoseEntry] = []
+        while current <= end {
+            for t in scheduledTimes {
+                let c = cal.dateComponents([.hour, .minute], from: t)
+                guard let d = cal.date(bySettingHour: c.hour ?? 9, minute: c.minute ?? 0, second: 0, of: current) else { continue }
+                let alreadyPassedOnAddDay = current == addDay && d < startDate
+                let status: DoseStatus = alreadyPassedOnAddDay ? .taken(startDate) : .upcoming
+                entries.append(DoseEntry(medicationId: medicationId, medicationName: medicationName, dosage: dosage, scheduledDate: d, status: status))
+            }
+            current = cal.date(byAdding: .day, value: 1, to: current) ?? current
+        }
+        return entries
+    }
 }
 
 // MARK: - Detected Medication Info (from camera scan)
