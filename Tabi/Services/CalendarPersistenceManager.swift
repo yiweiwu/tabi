@@ -1,6 +1,5 @@
 import Foundation
 import FirebaseFirestore
-import UIKit
 
 // MARK: - Calendar Persistence Manager
 
@@ -11,12 +10,11 @@ class CalendarPersistenceManager {
     private var listeners: [UUID: ListenerRegistration] = [:]
     private init() {}
 
-    private var userId: String {
-        UIDevice.current.identifierForVendor?.uuidString ?? "anonymous"
-    }
-
-    private func docRef(for id: UUID) -> DocumentReference {
-        db.collection("users").document(userId).collection("doses").document(id.uuidString)
+    // Requires a signed-in user - no anonymous/device-ID fallback, since that
+    // would reintroduce unscoped access to another installation's data.
+    private func docRef(for id: UUID) -> DocumentReference? {
+        guard let userId = AuthenticationManager.shared.uid else { return nil }
+        return db.collection("users").document(userId).collection("doses").document(id.uuidString)
     }
 
     func save(schedule: DoseSchedule) {
@@ -67,8 +65,8 @@ class CalendarPersistenceManager {
     }
 
     func startListening(for id: UUID) {
-        guard listeners[id] == nil else { return }
-        listeners[id] = docRef(for: id).addSnapshotListener { [weak self] snapshot, _ in
+        guard listeners[id] == nil, let ref = docRef(for: id) else { return }
+        listeners[id] = ref.addSnapshotListener { [weak self] snapshot, _ in
             guard let self, let data = snapshot?.data(),
                   let entries = Self.decodeEntries(data) else { return }
             self.cache[id] = entries
@@ -77,8 +75,8 @@ class CalendarPersistenceManager {
 
     private func persist(_ entries: [DoseEntry], id: UUID) {
         cache[id] = entries
-        guard let dict = Self.encodeEntries(entries) else { return }
-        docRef(for: id).setData(dict)
+        guard let dict = Self.encodeEntries(entries), let ref = docRef(for: id) else { return }
+        ref.setData(dict)
     }
 
     private static func encodeEntries(_ entries: [DoseEntry]) -> [String: Any]? {

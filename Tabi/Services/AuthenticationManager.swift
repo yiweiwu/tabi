@@ -1,0 +1,102 @@
+import SwiftUI
+import UIKit
+import CryptoKit
+import FirebaseAuth
+import GoogleSignIn
+
+// MARK: - Authentication Manager
+
+enum AuthenticationError: LocalizedError {
+    case missingAppleIdentityToken
+    case missingAppleNonce
+    case missingGoogleIDToken
+    case missingGoogleClientID
+
+    var errorDescription: String? {
+        switch self {
+        case .missingAppleIdentityToken: return "Apple did not return an identity token."
+        case .missingAppleNonce: return "Missing sign-in nonce. Please try again."
+        case .missingGoogleIDToken: return "Google did not return an ID token."
+        case .missingGoogleClientID: return "Google sign-in isn't configured yet. Please try again later."
+        }
+    }
+}
+
+@MainActor
+@Observable
+class AuthenticationManager {
+    static let shared = AuthenticationManager()
+
+    var currentUser: FirebaseAuth.User?
+
+    // nonisolated: Auth.auth().currentUser is a thread-safe, synchronous read
+    // in FirebaseAuth, and callers like CalendarPersistenceManager/SharingView
+    // are not MainActor-isolated, so uid must be reachable without a hop.
+    nonisolated var uid: String? { Auth.auth().currentUser?.uid }
+
+    // Not removed on deinit: this is a singleton that lives for the app's
+    // process lifetime, so the listener is never torn down.
+    private var authStateHandle: AuthStateDidChangeListenerHandle?
+
+    private init() {
+        currentUser = Auth.auth().currentUser
+        authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            self?.currentUser = user
+        }
+    }
+
+    // MARK: Sign in with Apple
+
+    // Firebase requires the raw nonce to be passed back alongside the identity
+    // token; only its SHA256 hash is sent to Apple in the request.
+    func startSignInWithAppleFlow() -> String {
+        randomNonceString()
+    }
+
+    func signInWithApple(idTokenString: String, nonce: String, fullName: PersonNameComponents?) async throws -> AuthDataResult {
+        let credential = OAuthProvider.appleCredential(withIDToken: idTokenString, rawNonce: nonce, fullName: fullName)
+        return try await Auth.auth().signIn(with: credential)
+    }
+
+    // MARK: Sign in with Google
+
+    func signInWithGoogle(presenting viewController: UIViewController) async throws -> AuthDataResult {
+        // GIDSignIn.signIn(withPresenting:) raises an uncatchable Objective-C
+        // exception (not a Swift error) when no GIDClientID is configured -
+        // check up front so a missing CLIENT_ID fails gracefully instead of
+        // crashing the app.
+        guard GIDSignIn.sharedInstance.configuration != nil else {
+            throw AuthenticationError.missingGoogleClientID
+        }
+        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: viewController)
+        guard let idToken = result.user.idToken?.tokenString else {
+            throw AuthenticationError.missingGoogleIDToken
+        }
+        let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: result.user.accessToken.tokenString)
+        return try await Auth.auth().signIn(with: credential)
+    }
+
+    // MARK: Sign out
+
+    func signOut() throws {
+        try Auth.auth().signOut()
+    }
+
+    // MARK: Nonce helpers (standard Firebase Sign in with Apple boilerplate)
+
+    private func randomNonceString(length: Int = 32) -> String {
+        precondition(length > 0)
+        var randomBytes = [UInt8](repeating: 0, count: length)
+        let status = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
+        if status != errSecSuccess {
+            fatalError("Unable to generate nonce: SecRandomCopyBytes failed with OSStatus \(status)")
+        }
+        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        return String(randomBytes.map { charset[Int($0) % charset.count] })
+    }
+
+    nonisolated static func sha256(_ input: String) -> String {
+        let hashed = SHA256.hash(data: Data(input.utf8))
+        return hashed.compactMap { String(format: "%02x", $0) }.joined()
+    }
+}

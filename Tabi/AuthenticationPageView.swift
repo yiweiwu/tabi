@@ -1,5 +1,6 @@
 import SwiftUI
 import AuthenticationServices
+import GoogleSignIn
 
 // MARK: - Authentication Page
 
@@ -7,6 +8,9 @@ struct AuthenticationPageView: View {
     @Environment(OnboardingCoordinator.self) private var coordinator
     @State private var showEmailSignUp = false
     @State private var showPhoneSignUp = false
+    @State private var currentNonce: String?
+    @State private var isSigningIn = false
+    @State private var authError: String?
     
     var body: some View {
         VStack(spacing: 30) {
@@ -35,13 +39,17 @@ struct AuthenticationPageView: View {
             VStack(spacing: 16) {
                 // Sign in with Apple
                 SignInWithAppleButton(.signUp) { request in
+                    let nonce = AuthenticationManager.shared.startSignInWithAppleFlow()
+                    currentNonce = nonce
                     request.requestedScopes = [.fullName, .email]
+                    request.nonce = AuthenticationManager.sha256(nonce)
                 } onCompletion: { result in
                     handleSignInWithApple(result)
                 }
                 .signInWithAppleButtonStyle(.black)
                 .frame(height: 50)
                 .cornerRadius(12)
+                .disabled(isSigningIn)
                 
                 // Continue with Google
                 AuthButton(
@@ -51,8 +59,9 @@ struct AuthenticationPageView: View {
                     foregroundColor: .black,
                     borderColor: Color.gray.opacity(0.3)
                 ) {
-                    handleGoogleSignIn()
+                    Task { await handleGoogleSignIn() }
                 }
+                .disabled(isSigningIn)
                 
                 // Continue with Facebook
                 AuthButton(
@@ -102,6 +111,14 @@ struct AuthenticationPageView: View {
                 }
             }
             .padding(.horizontal, 32)
+
+            if let authError {
+                Text(authError)
+                    .font(.caption)
+                    .foregroundColor(.tabiRed)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
             
             Spacer()
             
@@ -145,16 +162,58 @@ struct AuthenticationPageView: View {
     private func handleSignInWithApple(_ result: Result<ASAuthorization, Error>) {
         switch result {
         case .success(let authorization):
-            print("Sign in with Apple successful")
-            coordinator.nextPage()
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                authError = "Unexpected Apple sign-in credential."
+                return
+            }
+            guard let nonce = currentNonce else {
+                authError = AuthenticationError.missingAppleNonce.errorDescription
+                return
+            }
+            guard let identityToken = credential.identityToken,
+                  let idTokenString = String(data: identityToken, encoding: .utf8) else {
+                authError = AuthenticationError.missingAppleIdentityToken.errorDescription
+                return
+            }
+            authError = nil
+            isSigningIn = true
+            Task {
+                do {
+                    _ = try await AuthenticationManager.shared.signInWithApple(idTokenString: idTokenString, nonce: nonce, fullName: credential.fullName)
+                    isSigningIn = false
+                    coordinator.nextPage()
+                } catch {
+                    isSigningIn = false
+                    authError = error.localizedDescription
+                }
+            }
         case .failure(let error):
-            print("Sign in with Apple failed: \(error)")
+            authError = error.localizedDescription
         }
     }
-    
-    private func handleGoogleSignIn() {
-        print("Google Sign In tapped")
-        coordinator.nextPage()
+
+    private func handleGoogleSignIn() async {
+        guard let presentingViewController = Self.rootViewController() else {
+            authError = "Unable to present Google sign-in."
+            return
+        }
+        authError = nil
+        isSigningIn = true
+        do {
+            _ = try await AuthenticationManager.shared.signInWithGoogle(presenting: presentingViewController)
+            isSigningIn = false
+            coordinator.nextPage()
+        } catch {
+            isSigningIn = false
+            authError = error.localizedDescription
+        }
+    }
+
+    private static func rootViewController() -> UIViewController? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?.rootViewController
     }
     
     private func handleFacebookSignIn() {
