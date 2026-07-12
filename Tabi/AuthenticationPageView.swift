@@ -1,5 +1,6 @@
 import SwiftUI
 import AuthenticationServices
+import GoogleSignIn
 
 // MARK: - Authentication Page
 
@@ -7,6 +8,10 @@ struct AuthenticationPageView: View {
     @Environment(OnboardingCoordinator.self) private var coordinator
     @State private var showEmailSignUp = false
     @State private var showPhoneSignUp = false
+    @State private var currentNonce: String?
+    @State private var isSigningIn = false
+    @State private var authError: String?
+    @State private var appleSignInCoordinator = AppleSignInCoordinator()
     
     var body: some View {
         ZStack {
@@ -34,8 +39,9 @@ struct AuthenticationPageView: View {
                             title: "Continue with Google",
                             iconColor: .red
                         ) {
-                            handleGoogleSignIn()
+                            Task { await handleGoogleSignIn() }
                         }
+                        .disabled(isSigningIn)
                         
                         // Continue with Facebook
                         SocialLoginButton(
@@ -54,6 +60,7 @@ struct AuthenticationPageView: View {
                         ) {
                             handleSignInWithApple()
                         }
+                        .disabled(isSigningIn)
                     }
                     .padding(.horizontal, 32)
                     
@@ -196,6 +203,18 @@ struct AuthenticationPageView: View {
                 }
                 Spacer()
             }
+
+            if let authError {
+                VStack {
+                    Spacer()
+                    Text(authError)
+                        .font(.caption)
+                        .foregroundColor(.tabiRed)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                        .padding(.bottom, 24)
+                }
+            }
         }
         .sheet(isPresented: $showEmailSignUp) {
             EmailSignUpSheet()
@@ -204,22 +223,109 @@ struct AuthenticationPageView: View {
             PhoneSignUpSheet()
         }
     }
-    
+
     // MARK: - Authentication Handlers
-    
+
     private func handleSignInWithApple() {
-        print("Sign in with Apple tapped")
-        coordinator.nextPage()
+        let nonce = AuthenticationManager.shared.startSignInWithAppleFlow()
+        currentNonce = nonce
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.requestedScopes = [.fullName, .email]
+        request.nonce = AuthenticationManager.sha256(nonce)
+
+        appleSignInCoordinator.onCompletion = { result in
+            handleSignInWithAppleResult(result)
+        }
+        let controller = ASAuthorizationController(authorizationRequests: [request])
+        controller.delegate = appleSignInCoordinator
+        controller.presentationContextProvider = appleSignInCoordinator
+        controller.performRequests()
     }
-    
-    private func handleGoogleSignIn() {
-        print("Google Sign In tapped")
-        coordinator.nextPage()
+
+    private func handleSignInWithAppleResult(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let authorization):
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                authError = "Unexpected Apple sign-in credential."
+                return
+            }
+            guard let nonce = currentNonce else {
+                authError = AuthenticationError.missingAppleNonce.errorDescription
+                return
+            }
+            guard let identityToken = credential.identityToken,
+                  let idTokenString = String(data: identityToken, encoding: .utf8) else {
+                authError = AuthenticationError.missingAppleIdentityToken.errorDescription
+                return
+            }
+            authError = nil
+            isSigningIn = true
+            Task {
+                do {
+                    _ = try await AuthenticationManager.shared.signInWithApple(idTokenString: idTokenString, nonce: nonce, fullName: credential.fullName)
+                    isSigningIn = false
+                    coordinator.nextPage()
+                } catch {
+                    isSigningIn = false
+                    authError = error.localizedDescription
+                }
+            }
+        case .failure(let error):
+            authError = error.localizedDescription
+        }
+    }
+
+    private func handleGoogleSignIn() async {
+        guard let presentingViewController = Self.rootViewController() else {
+            authError = "Unable to present Google sign-in."
+            return
+        }
+        authError = nil
+        isSigningIn = true
+        do {
+            _ = try await AuthenticationManager.shared.signInWithGoogle(presenting: presentingViewController)
+            isSigningIn = false
+            coordinator.nextPage()
+        } catch {
+            isSigningIn = false
+            authError = error.localizedDescription
+        }
+    }
+
+    private static func rootViewController() -> UIViewController? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?.rootViewController
     }
     
     private func handleFacebookSignIn() {
         print("Facebook Sign In tapped")
         coordinator.nextPage()
+    }
+}
+
+// MARK: - Apple Sign In Coordinator
+
+// The redesigned Create Account screen uses a custom-styled button for Apple
+// sign-in instead of the native SignInWithAppleButton, so the
+// ASAuthorizationController flow has to be driven manually via this delegate.
+final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+    var onCompletion: ((Result<ASAuthorization, Error>) -> Void)?
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow } ?? ASPresentationAnchor()
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        onCompletion?(.success(authorization))
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        onCompletion?(.failure(error))
     }
 }
 

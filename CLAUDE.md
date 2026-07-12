@@ -41,6 +41,7 @@ Tabi/
 │   │   ├── LabelScanner.swift   — Vision OCR
 │   │   └── PillVerifier.swift   — pill verification
 │   ├── CameraManager.swift    — AVFoundation singleton + CameraPreviewView + PhotoCaptureDelegate
+│   ├── AuthenticationManager.swift — Firebase Auth singleton (Sign in with Apple + Google)
 │   ├── CalendarPersistenceManager.swift
 │   ├── MedicationScheduleParser.swift
 │   └── NotificationScheduler.swift
@@ -122,10 +123,10 @@ Before adding a field, always check whether the answer can be read from data tha
 
 Every extra field is a new source of discrepancy. If existing data can answer the question, use it. Only add a field when the information genuinely cannot be derived at read time.
 
-Stored models: `Medication`, `DoseEntry`, `SharedPerson`. Firestore paths:
-- `users/{deviceId}/medications/{id}`
-- `users/{deviceId}/doses/{medicationId}` (contains `entries` array)
-- `users/{deviceId}/sharedPeople/{id}`
+Stored models: `Medication`, `DoseEntry`, `SharedPerson`. Firestore paths are scoped by the signed-in Firebase Auth uid (`AuthenticationManager.shared.uid`), not a device ID:
+- `users/{uid}/medications/{id}`
+- `users/{uid}/doses/{medicationId}` (contains `entries` array)
+- `users/{uid}/sharedPeople/{id}`
 
 ## Dose Tracking Logic
 
@@ -164,3 +165,4 @@ let passedCount = times.filter { $0 < Date() }.count
 - `pillColors` is a module-level `let` in `DesignSystem.swift`, not a static member. Access it directly: `pillColors[index]`.
 - `Services/FirestoreHelpers.swift` provides `firestoreDict()` and `decoded(from:)` extensions on `Encodable`/`Decodable`. Use these instead of writing inline `JSONEncoder → JSONSerialization` in any new Firestore persistence code.
 - `GoogleService-Info.plist` is gitignored — never commit it. Obtain it from a teammate.
+- `PRODUCT_BUNDLE_IDENTIFIER` (the `Tabi` target's build setting) must match `GoogleService-Info.plist`'s `BUNDLE_ID`. Because the plist is gitignored, a mismatch never shows up in a PR diff — a "Verify GoogleService-Info.plist bundle ID" build phase checks this on every build and fails loudly if they diverge. If you change the bundle ID, re-download the plist from the Firebase console for that bundle ID.

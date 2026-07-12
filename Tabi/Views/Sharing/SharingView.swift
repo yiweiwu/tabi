@@ -758,9 +758,11 @@ struct SharingView: View {
     @State private var isEditMode = false
     @State private var listener: ListenerRegistration?
 
-    private var userId: String { UIDevice.current.identifierForVendor?.uuidString ?? "anonymous" }
-    private var collection: CollectionReference {
-        Firestore.firestore().collection("users").document(userId).collection("sharedPeople")
+    // Requires a signed-in user - no anonymous/device-ID fallback, since that
+    // would reintroduce unscoped access to another installation's data.
+    private var collection: CollectionReference? {
+        guard let userId = AuthenticationManager.shared.uid else { return nil }
+        return Firestore.firestore().collection("users").document(userId).collection("sharedPeople")
     }
     
     var body: some View {
@@ -908,7 +910,7 @@ struct SharingView: View {
             .navigationTitle("Sharing")
         }
         .onAppear {
-            listener = collection.addSnapshotListener { snapshot, _ in
+            listener = collection?.addSnapshotListener { snapshot, _ in
                 guard let docs = snapshot?.documents else { return }
                 sharingPeople = docs.compactMap { Self.decodePerson($0.data()) }.sorted { $0.dateAdded > $1.dateAdded }
             }
@@ -935,12 +937,12 @@ struct SharingView: View {
     }
     
     private func addConnection(_ person: SharedPerson) {
-        guard let dict = Self.encodePerson(person) else { return }
+        guard let dict = Self.encodePerson(person), let collection else { return }
         collection.document(person.id.uuidString).setData(dict)
     }
 
     private func removeConnection(_ person: SharedPerson) {
-        collection.document(person.id.uuidString).delete()
+        collection?.document(person.id.uuidString).delete()
     }
 
     private static func encodePerson(_ person: SharedPerson) -> [String: Any]? { person.firestoreDict() }
