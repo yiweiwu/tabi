@@ -92,20 +92,20 @@ struct TabiTests {
         let detectedInfo = try await detectMedicationInfo(from: image, cacheKey: testCase.imageName)
         
         print("📊 Detection Results:")
-        print("   Detected Medication: \(detectedInfo.medicationName)")
+        print("   Detected Medication: \(detectedInfo.brandName)")
         print("   Detected Dosage: \(detectedInfo.dosage)")
         print("   Detected Schedule: \(detectedInfo.schedule)")
         
         // Verify medication name (lenient threshold for OCR variations)
         let medicationMatch = fuzzyMatch(
-            detectedInfo.medicationName,
+            detectedInfo.brandName,
             testCase.expectedMedication,
             threshold: 0.75
         )
         
         #expect(
             medicationMatch,
-            "Expected medication '\(testCase.expectedMedication)' but got '\(detectedInfo.medicationName)' with similarity \(String(format: "%.2f", calculateSimilarity(detectedInfo.medicationName, testCase.expectedMedication)))"
+            "Expected medication '\(testCase.expectedMedication)' but got '\(detectedInfo.brandName)' with similarity \(String(format: "%.2f", calculateSimilarity(detectedInfo.brandName, testCase.expectedMedication)))"
         )
         
         // Verify dosage
@@ -165,14 +165,14 @@ struct TabiTests {
         let info = try await detectMedicationInfo(from: image, cacheKey: "Med_Hydrocodone")
         
         print("\n📊 Extracted Information:")
-        print("  Medication: \(info.medicationName)")
+        print("  Medication: \(info.brandName)")
         print("  Dosage: \(info.dosage)")
         print("  Schedule: \(info.schedule)")
         
         print("\n📝 All Detected Text:")
         info.allDetectedText.forEach { print("  - \($0)") }
         
-        let medicationLowercased = info.medicationName.lowercased()
+        let medicationLowercased = info.brandName.lowercased()
         let hasHydrocodone = medicationLowercased.contains("hydrocodone")
         let hasAcetamin = medicationLowercased.contains("acetamin")
         let hasDosage = info.dosage.contains("5-325") || info.dosage.contains("5 325")
@@ -196,14 +196,14 @@ struct TabiTests {
         let info = try await detectMedicationInfo(from: image, cacheKey: "Med_Doxycycline")
         
         print("\n📊 Extracted Information:")
-        print("  Medication: \(info.medicationName)")
+        print("  Medication: \(info.brandName)")
         print("  Dosage: \(info.dosage)")
         print("  Schedule: \(info.schedule)")
         
         print("\n📝 All Detected Text:")
         info.allDetectedText.forEach { print("  - \($0)") }
         
-        let medicationLowercased = info.medicationName.lowercased()
+        let medicationLowercased = info.brandName.lowercased()
         let hasDoxycycline = medicationLowercased.contains("doxycycline")
         let hasHyclate = medicationLowercased.contains("hyclate")
         let hasDosage = info.dosage.contains("100")
