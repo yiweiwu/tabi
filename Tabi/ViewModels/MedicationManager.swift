@@ -41,6 +41,10 @@ class MedicationManager: ObservableObject {
         saveMedications()
     }
 
+    func startMissedDoseMonitoring() {
+        CalendarPersistenceManager.shared.startMonitoring { [weak self] in self?.medications ?? [] }
+    }
+
     func remove(_ medication: Medication) {
         if medications.count == 1 {
             NotificationScheduler.shared.cancelAll()
