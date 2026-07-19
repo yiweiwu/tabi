@@ -26,26 +26,26 @@ struct ProfileSetupPageView: View {
             }
             
             VStack(spacing: 40) {
-            Spacer()
-            
-            // Header
-            VStack(spacing: 16) {
-                Image(systemName: "person.circle.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(.tabiLavender)
+                Spacer()
                 
-                Text("Let's Get Started")
-                    .font(.title.bold())
-                    .foregroundColor(.primary)
+                // Header
+                VStack(spacing: 16) {
+                    Image(systemName: "person.circle.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.tabiLavender)
+                    
+                    Text("Let's Get Started")
+                        .font(.title.bold())
+                        .foregroundColor(.primary)
+                    
+                    Text("Help us personalize your experience")
+                        .font(.body)
+                        .foregroundColor(.tabiGray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
                 
-                Text("Help us personalize your experience")
-                    .font(.body)
-                    .foregroundColor(.tabiGray)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            }
-            
-            Spacer()
+                Spacer()
             
             // Form fields
             VStack(spacing: 20) {
@@ -117,16 +117,8 @@ struct ProfileSetupPageView: View {
             .padding(.horizontal, 32)
             
             Spacer()
-            
-            // Info text
-            Text("This information helps us provide better medication reminders")
-                .font(.caption)
-                .foregroundColor(.tabiGray)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-                .padding(.bottom, 20)
-        }
-        .padding(.vertical, 40)
+            }
+            .padding(.vertical, 40)
         }
     }
 }

@@ -38,6 +38,22 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D11CD422300D5240000026C0 /* Exceptions for "Tabi" folder in "TabiTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+				"medicine-scanning.png",
+			);
+			target = D1450C592E80F798007B817C /* TabiTests */;
+		};
+		D11CD423300D5240000026C0 /* Exceptions for "Tabi" folder in "TabiUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+				"medicine-scanning.png",
+			);
+			target = D1450C632E80F798007B817C /* TabiUITests */;
+		};
 		D14776802EC15FC600B6BC72 /* Exceptions for "Tabi" folder in "Tabi" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -52,6 +68,8 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				D14776802EC15FC600B6BC72 /* Exceptions for "Tabi" folder in "Tabi" target */,
+				D11CD422300D5240000026C0 /* Exceptions for "Tabi" folder in "TabiTests" target */,
+				D11CD423300D5240000026C0 /* Exceptions for "Tabi" folder in "TabiUITests" target */,
 			);
 			path = Tabi;
 			sourceTree = "<group>";

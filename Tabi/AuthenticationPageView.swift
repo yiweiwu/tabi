@@ -190,15 +190,9 @@ struct AuthenticationPageView: View {
                             coordinator.currentPage = .profileSetup
                         }
                     }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.black.opacity(0.6))
-                    )
-                    .padding(.top, 50)
+                    .foregroundColor(.tabiGray)
+                    .font(.body)
+                    .padding(.top, 16)
                     .padding(.trailing, 24)
                 }
                 Spacer()

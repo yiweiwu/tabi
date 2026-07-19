@@ -48,6 +48,29 @@ class OnboardingCoordinator {
         }
     }
     
+    func previousPage() {
+        switch currentPage {
+        case .welcome:
+            currentPage = .splash
+        case .medicineTracking:
+            currentPage = .welcome
+        case .pillReminders:
+            currentPage = .medicineTracking
+        case .familySharing:
+            currentPage = .pillReminders
+        case .authentication:
+            currentPage = .familySharing
+        case .profileSetup:
+            currentPage = .authentication
+        case .permissions:
+            currentPage = .profileSetup
+        case .completion:
+            currentPage = .permissions
+        case .splash:
+            break // Can't go back from splash
+        }
+    }
+    
     func skipToNext() {
         nextPage()
     }
@@ -132,6 +155,23 @@ struct OnboardingView: View {
             }
         }
         .environment(coordinator)
+        .gesture(
+            DragGesture()
+                .onEnded { gesture in
+                    // Swipe left to go to next page
+                    if gesture.translation.width < -50 && canProceed {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            coordinator.nextPage()
+                        }
+                    }
+                    // Swipe right to go to previous page
+                    else if gesture.translation.width > 50 {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            coordinator.previousPage()
+                        }
+                    }
+                }
+        )
         .onAppear {
             // Auto-advance from splash after 2 seconds
             if coordinator.currentPage == .splash {
@@ -223,54 +263,12 @@ struct MedicineTrackingPageView: View {
             Spacer()
             
             // Image/Illustration Area
-            ZStack {
-                // Background image simulation
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 280, height: 380)
-                
-                // Scanning frame with pill bottle
-                VStack {
-                    Text("Scanning...")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding(.top, 40)
-                    
-                    Spacer()
-                    
-                    // Pill bottle frame
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white, lineWidth: 3)
-                        .frame(width: 180, height: 240)
-                        .overlay(
-                            // Pill bottle placeholder
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white)
-                                .frame(width: 120, height: 180)
-                                .overlay(
-                                    VStack(spacing: 8) {
-                                        // Orange cap
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .fill(Color.tabiOrange)
-                                            .frame(width: 80, height: 30)
-                                        
-                                        // White label area
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .fill(Color.white)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .stroke(Color.orange, lineWidth: 2)
-                                            )
-                                            .frame(width: 80, height: 100)
-                                    }
-                                )
-                        )
-                    
-                    Spacer()
-                }
+            Image("medicine-scanning")
+                .resizable()
+                .scaledToFill()
                 .frame(width: 280, height: 380)
-            }
-            .padding(.bottom, 40)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .padding(.bottom, 40)
             
             // Page indicator dots
             HStack(spacing: 8) {

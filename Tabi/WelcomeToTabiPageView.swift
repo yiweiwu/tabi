@@ -49,26 +49,25 @@ struct WelcomeToTabiPageView: View {
             }
             
             // Description
-            Text("Create an account to track your meds and share with family")
+            Text("Stay on top of your meds with ease")
                 .font(.body)
                 .foregroundColor(.tabiGray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
-            
-            Spacer()
+                .padding(.bottom, 8)
             
             // Features list
             VStack(spacing: 20) {
                 OnboardingFeatureRow(
-                    icon: "checklist",
-                    title: "Track Medications",
-                    description: "Never miss a dose with smart reminders"
-                )
-                
-                OnboardingFeatureRow(
                     icon: "camera.fill",
                     title: "Scan & Add",
                     description: "Quickly add meds by scanning labels"
+                )
+                
+                OnboardingFeatureRow(
+                    icon: "checklist",
+                    title: "Track Medications",
+                    description: "Never miss a dose with smart reminders"
                 )
                 
                 OnboardingFeatureRow(
