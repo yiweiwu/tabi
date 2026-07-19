@@ -249,6 +249,10 @@ struct ShareWithSomeoneView: View {
     @State private var successMessage = ""
     @State private var connectionWasAdded = false
     
+    // Used only for the email confirmation body (MailComposeView) - the SMS
+    // path sends an opt-in request instead, composed server-side by
+    // sendConnectionConfirmation, since email has no carrier opt-in
+    // requirement and SMS does.
     private var confirmationMessage: String {
         let userName = medicationManager.userProfile.firstName.isEmpty ? "the user" : medicationManager.userProfile.firstName
         let contactName = selectedContactName.isEmpty ? "there" : selectedContactName.components(separatedBy: " ").first ?? selectedContactName
@@ -277,11 +281,13 @@ struct ShareWithSomeoneView: View {
     }
 
     // Saves the connection to Firestore first, then attempts a best-effort
-    // confirmation. A phone number gets a confirmation SMS via the same
+    // confirmation. A phone number gets an opt-in request SMS via the same
     // Firestore -> Cloud Function -> AWS SNS pipeline the missed-dose alerts
     // use, so it works from the Simulator and doesn't depend on the device's
-    // own Messages app. Email still uses the native Mail compose sheet since
-    // there's no server-side email pipeline. Neither confirmation blocks the
+    // own Messages app - the caretaker must tap the link before they're
+    // eligible for missed-dose alerts (see SharedPerson.isEligibleForMissedDoseAlerts).
+    // Email still uses the native Mail compose sheet since there's no
+    // carrier opt-in requirement for email. Neither confirmation blocks the
     // connection from being added.
     private func addConnectionAndConfirm() {
         guard !phoneNumber.isEmpty || !email.isEmpty else {
@@ -293,14 +299,21 @@ struct ShareWithSomeoneView: View {
         let newConnection = SharedPerson(
             name: selectedContactName.isEmpty ? (phoneNumber.isEmpty ? email : phoneNumber) : selectedContactName,
             phoneNumber: phoneNumber.isEmpty ? nil : phoneNumber,
-            email: email.isEmpty ? nil : email
+            email: email.isEmpty ? nil : email,
+            optInStatus: phoneNumber.isEmpty ? nil : .pending
         )
         onConnectionAdded?(newConnection)
         connectionWasAdded = true
 
         if !phoneNumber.isEmpty {
-            ConnectionConfirmationService.shared.sendConfirmation(phone: phoneNumber, message: confirmationMessage)
-            finish("Added \(newConnection.name) to your shared connections. A confirmation text is on its way.")
+            let contactName = selectedContactName.components(separatedBy: " ").first ?? selectedContactName
+            ConnectionConfirmationService.shared.sendConfirmationRequest(
+                sharedPersonId: newConnection.id,
+                phone: phoneNumber,
+                contactName: contactName,
+                patientName: medicationManager.userProfile.firstName
+            )
+            finish("Added \(newConnection.name) to your shared connections. We've texted them a link to confirm — they'll start getting alerts once they tap it.")
         } else if MailComposeView.canSendMail {
             showMailCompose = true
         } else {
@@ -464,25 +477,43 @@ struct ActivityViewController: UIViewControllerRepresentable {
 
 // MARK: - Shared Person Model
 
+enum CaretakerOptInStatus: String, Codable {
+    case pending
+    case confirmed
+}
+
 struct SharedPerson: Identifiable, Codable {
     let id: UUID
     let name: String
     let phoneNumber: String?
     let email: String?
     let dateAdded: Date
-    
-    init(id: UUID = UUID(), name: String, phoneNumber: String? = nil, email: String? = nil, dateAdded: Date = Date()) {
+    // nil means either no phone number, or a doc that predates this field -
+    // both are treated as "not confirmed", never grandfathered in.
+    let optInStatus: CaretakerOptInStatus?
+
+    init(id: UUID = UUID(), name: String, phoneNumber: String? = nil, email: String? = nil, dateAdded: Date = Date(), optInStatus: CaretakerOptInStatus? = nil) {
         self.id = id
         self.name = name
         self.phoneNumber = phoneNumber
         self.email = email
         self.dateAdded = dateAdded
+        self.optInStatus = optInStatus
     }
-    
+
     var displayTime: String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter.string(from: dateAdded)
+    }
+
+    // A caretaker only receives missed-dose alerts once they've confirmed
+    // via the link sent by ConnectionConfirmationService - carriers require
+    // the recipient to actively opt in, not just have their number entered
+    // by the patient.
+    var isEligibleForMissedDoseAlerts: Bool {
+        guard let phoneNumber, !phoneNumber.isEmpty else { return false }
+        return optInStatus == .confirmed
     }
 }
 
@@ -655,6 +686,14 @@ struct SharingView: View {
                                                 if let email = person.email {
                                                     Label(email, systemImage: "envelope.fill")
                                                         .font(.caption).foregroundColor(.tabiGray)
+                                                }
+                                                if person.optInStatus == .pending {
+                                                    Text("Pending confirmation")
+                                                        .font(.caption2.bold())
+                                                        .padding(.horizontal, 8).padding(.vertical, 3)
+                                                        .background(Color.tabiAmber.opacity(0.15))
+                                                        .foregroundColor(.tabiAmber)
+                                                        .cornerRadius(8)
                                                 }
                                             }
                                             Spacer()

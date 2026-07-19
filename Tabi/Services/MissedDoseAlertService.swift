@@ -17,8 +17,9 @@ class MissedDoseAlertService {
         Firestore.firestore().collection("users").document(userId).collection("sharedPeople")
             .getDocuments { snapshot, _ in
                 let phones = (snapshot?.documents ?? [])
-                    .compactMap { SharedPerson.decoded(from: $0.data())?.phoneNumber }
-                    .filter { !$0.isEmpty }
+                    .compactMap { SharedPerson.decoded(from: $0.data()) }
+                    .filter { $0.isEligibleForMissedDoseAlerts }
+                    .compactMap { $0.phoneNumber }
                 guard !phones.isEmpty else { return }
 
                 let alerts = Firestore.firestore().collection("missed_pill_alerts")

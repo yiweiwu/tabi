@@ -32,6 +32,10 @@ rules_version = '2';
 //   - phoneNumber: string (optional)
 //   - email: string (optional)
 //   - dateAdded: number (required, seconds since 2001-01-01 reference date)
+//   - optInStatus: string (optional, "pending"|"confirmed") - the client may
+//     only ever write "pending" (or omit it); "confirmed" is set exclusively
+//     by the confirmCaretakerOptIn Cloud Function via the Admin SDK, which
+//     bypasses these rules. See isValidOptInStatus().
 //
 // Collection: missed_pill_alerts/{alertId} (top-level, not user-scoped)
 // Written by any signed-in client when a dose goes missed; only the
@@ -45,9 +49,14 @@ rules_version = '2';
 // Collection: connection_confirmations/{confirmationId} (top-level, not user-scoped)
 // Written by any signed-in client when a caretaker connection is added;
 // only the sendConnectionConfirmation Cloud Function (Admin SDK) reads it.
+// The function composes the outbound SMS (including a confirmCaretakerOptIn
+// link) from these structured fields server-side.
 // Fields:
+//   - uid: string (required, must equal request.auth.uid)
+//   - sharedPersonId: string (required, matches the SharedPerson.id this confirmation is for)
 //   - phone: string (required)
-//   - message: string (required)
+//   - contactName: string (required)
+//   - patientName: string (required)
 //
 // ===============================================================
 
@@ -88,8 +97,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // The client may create/update with optInStatus absent, null, or
+    // 'pending'. 'confirmed' may only appear if it was already the stored
+    // value (i.e. set by confirmCaretakerOptIn's Admin SDK write, which
+    // bypasses these rules) - a client can never newly set it to 'confirmed'.
+    // On create, resource == null, so a doc can never be created already
+    // "confirmed".
+    function isValidOptInStatus() {
+      return !('optInStatus' in request.resource.data) ||
+             request.resource.data.optInStatus == null ||
+             request.resource.data.optInStatus == 'pending' ||
+             (resource != null && request.resource.data.optInStatus == resource.data.optInStatus);
+    }
+
     function isValidSharedPerson() {
-      return hasOnlyAllowedFields(['id', 'name', 'phoneNumber', 'email', 'dateAdded']) &&
+      return hasOnlyAllowedFields(['id', 'name', 'phoneNumber', 'email', 'dateAdded', 'optInStatus']) &&
              hasRequiredFields(['id', 'name', 'dateAdded']) &&
              request.resource.data.id is string &&
              request.resource.data.id.size() <= 100 &&
@@ -97,7 +119,8 @@ service cloud.firestore {
              request.resource.data.name.size() <= 200 &&
              request.resource.data.dateAdded is number &&
              isValidOptionalString('phoneNumber', 30) &&
-             isValidOptionalString('email', 200);
+             isValidOptionalString('email', 200) &&
+             isValidOptInStatus();
     }
 
     function isValidMissedPillAlert() {
@@ -111,12 +134,18 @@ service cloud.firestore {
     }
 
     function isValidConnectionConfirmation() {
-      return hasOnlyAllowedFields(['phone', 'message']) &&
-             hasRequiredFields(['phone', 'message']) &&
+      return hasOnlyAllowedFields(['uid', 'sharedPersonId', 'phone', 'contactName', 'patientName']) &&
+             hasRequiredFields(['uid', 'sharedPersonId', 'phone', 'contactName', 'patientName']) &&
+             request.resource.data.uid is string &&
+             request.resource.data.uid == request.auth.uid &&
+             request.resource.data.sharedPersonId is string &&
+             request.resource.data.sharedPersonId.size() <= 100 &&
              request.resource.data.phone is string &&
              request.resource.data.phone.size() <= 30 &&
-             request.resource.data.message is string &&
-             request.resource.data.message.size() <= 500;
+             request.resource.data.contactName is string &&
+             request.resource.data.contactName.size() <= 200 &&
+             request.resource.data.patientName is string &&
+             request.resource.data.patientName.size() <= 200;
     }
 
     // ===============================================================

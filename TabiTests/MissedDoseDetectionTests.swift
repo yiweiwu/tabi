@@ -152,3 +152,38 @@ struct DoseScheduleBuildEntriesTests {
         #expect(todaysEntries.allSatisfy { $0.status == .upcoming })
     }
 }
+
+// MARK: - Caretaker Opt-In Eligibility Tests
+
+// A caretaker only receives missed-dose alerts once they've confirmed via
+// the confirmCaretakerOptIn link - having a phone number entered by the
+// patient is not itself consent. See SharedPerson.isEligibleForMissedDoseAlerts.
+@Suite
+struct SharedPersonOptInEligibilityTests {
+
+    @Test("A confirmed caretaker with a phone number is eligible")
+    func testConfirmedWithPhoneIsEligible() throws {
+        let person = SharedPerson(name: "Jane", phoneNumber: "+15551234567", optInStatus: .confirmed)
+        #expect(person.isEligibleForMissedDoseAlerts)
+    }
+
+    @Test("A pending caretaker is not eligible")
+    func testPendingIsNotEligible() throws {
+        let person = SharedPerson(name: "Jane", phoneNumber: "+15551234567", optInStatus: .pending)
+        #expect(!person.isEligibleForMissedDoseAlerts)
+    }
+
+    @Test("A legacy doc decoded with no optInStatus field is not eligible")
+    func testLegacyDecodeIsNotEligible() throws {
+        let dict: [String: Any] = ["id": UUID().uuidString, "name": "Jane", "phoneNumber": "+15551234567", "dateAdded": 0]
+        let person = try #require(SharedPerson.decoded(from: dict))
+        #expect(person.optInStatus == nil)
+        #expect(!person.isEligibleForMissedDoseAlerts)
+    }
+
+    @Test("An email-only caretaker is never eligible regardless of optInStatus")
+    func testEmailOnlyNeverEligible() throws {
+        let person = SharedPerson(name: "Jane", email: "jane@example.com", optInStatus: .confirmed)
+        #expect(!person.isEligibleForMissedDoseAlerts)
+    }
+}
