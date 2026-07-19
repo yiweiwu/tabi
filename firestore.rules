@@ -33,6 +33,22 @@ rules_version = '2';
 //   - email: string (optional)
 //   - dateAdded: number (required, seconds since 2001-01-01 reference date)
 //
+// Collection: missed_pill_alerts/{alertId} (top-level, not user-scoped)
+// Written by any signed-in client when a dose goes missed; only the
+// sendMissedPillAlert Cloud Function (Admin SDK, bypasses these rules)
+// reads/deletes it, so clients may only create.
+// Fields:
+//   - caretakerPhone: string (required)
+//   - medicationName: string (required)
+//   - scheduledDate: number (required, seconds since 2001-01-01 reference date)
+//
+// Collection: connection_confirmations/{confirmationId} (top-level, not user-scoped)
+// Written by any signed-in client when a caretaker connection is added;
+// only the sendConnectionConfirmation Cloud Function (Admin SDK) reads it.
+// Fields:
+//   - phone: string (required)
+//   - message: string (required)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -68,6 +84,10 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     function isValidSharedPerson() {
       return hasOnlyAllowedFields(['id', 'name', 'phoneNumber', 'email', 'dateAdded']) &&
              hasRequiredFields(['id', 'name', 'dateAdded']) &&
@@ -78,6 +98,25 @@ service cloud.firestore {
              request.resource.data.dateAdded is number &&
              isValidOptionalString('phoneNumber', 30) &&
              isValidOptionalString('email', 200);
+    }
+
+    function isValidMissedPillAlert() {
+      return hasOnlyAllowedFields(['caretakerPhone', 'medicationName', 'scheduledDate']) &&
+             hasRequiredFields(['caretakerPhone', 'medicationName', 'scheduledDate']) &&
+             request.resource.data.caretakerPhone is string &&
+             request.resource.data.caretakerPhone.size() <= 30 &&
+             request.resource.data.medicationName is string &&
+             request.resource.data.medicationName.size() <= 200 &&
+             request.resource.data.scheduledDate is number;
+    }
+
+    function isValidConnectionConfirmation() {
+      return hasOnlyAllowedFields(['phone', 'message']) &&
+             hasRequiredFields(['phone', 'message']) &&
+             request.resource.data.phone is string &&
+             request.resource.data.phone.size() <= 30 &&
+             request.resource.data.message is string &&
+             request.resource.data.message.size() <= 500;
     }
 
     // ===============================================================
@@ -94,6 +133,16 @@ service cloud.firestore {
         allow read, delete: if isOwner(userId);
         allow create, update: if isOwner(userId) && isValidSharedPerson();
       }
+    }
+
+    match /missed_pill_alerts/{alertId} {
+      allow create: if isSignedIn() && isValidMissedPillAlert();
+      allow read, update, delete: if false;
+    }
+
+    match /connection_confirmations/{confirmationId} {
+      allow create: if isSignedIn() && isValidConnectionConfirmation();
+      allow read, update, delete: if false;
     }
 
     // Default deny everything else

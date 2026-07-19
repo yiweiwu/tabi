@@ -40,46 +40,6 @@ struct ContactPicker: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Message Compose View Controller
-
-struct MessageComposeView: UIViewControllerRepresentable {
-    let recipients: [String]
-    let body: String
-    @Environment(\.dismiss) var dismiss
-    var onComplete: ((MessageComposeResult) -> Void)?
-    
-    func makeUIViewController(context: Context) -> MFMessageComposeViewController {
-        let controller = MFMessageComposeViewController()
-        controller.recipients = recipients
-        controller.body = body
-        controller.messageComposeDelegate = context.coordinator
-        return controller
-    }
-    
-    func updateUIViewController(_ uiViewController: MFMessageComposeViewController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
-        var parent: MessageComposeView
-        
-        init(_ parent: MessageComposeView) {
-            self.parent = parent
-        }
-        
-        func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
-            parent.onComplete?(result)
-            parent.dismiss()
-        }
-    }
-    
-    static var canSendText: Bool {
-        MFMessageComposeViewController.canSendText()
-    }
-}
-
 // MARK: - Mail Compose View Controller
 
 struct MailComposeView: UIViewControllerRepresentable {
@@ -273,50 +233,33 @@ struct AskSomeoneToShareView: View {
     }
 }
 
-// MARK: - Contact Search Result
-
-struct ContactSearchResult: Identifiable {
-    let id = UUID()
-    let contact: CNContact
-    let name: String
-    let email: String?
-    let phoneNumber: String?
-}
-
 // MARK: - Share With Someone View
 
 struct ShareWithSomeoneView: View {
     @ObservedObject var medicationManager: MedicationManager
     var onConnectionAdded: ((SharedPerson) -> Void)?
     @Environment(\.dismiss) var dismiss
-    @State private var searchText = ""
     @State private var phoneNumber = ""
     @State private var email = ""
-    @State private var showMessageCompose = false
     @State private var showMailCompose = false
     @State private var showContactPicker = false
     @State private var selectedContact: CNContact?
     @State private var selectedContactName: String = ""
-    @State private var searchResults: [ContactSearchResult] = []
-    @State private var isSearching = false
-    @State private var searchTask: Task<Void, Never>?
     @State private var showSuccessAlert = false
     @State private var successMessage = ""
-    @State private var contactAccessGranted = false
-    @State private var hasRequestedPermission = false
-    @FocusState private var isSearchFocused: Bool
+    @State private var connectionWasAdded = false
     
     private var confirmationMessage: String {
         let userName = medicationManager.userProfile.firstName.isEmpty ? "the user" : medicationManager.userProfile.firstName
         let contactName = selectedContactName.isEmpty ? "there" : selectedContactName.components(separatedBy: " ").first ?? selectedContactName
-        
+
         return """
         Hi \(contactName), it's Tabi. You're now subscribed to \(userName)'s medication schedule.
-        
+
         Remember: You'll be notified if \(userName) misses a pill so you can send a reminder.
         """
     }
-    
+
     private func updateFromContact(_ contact: CNContact) {
         // Extract phone number
         if let phone = contact.phoneNumbers.first {
@@ -332,129 +275,51 @@ struct ShareWithSomeoneView: View {
         let fullName = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
         selectedContactName = fullName.isEmpty ? "Contact" : fullName
     }
-    
-    private func requestContactAccess() {
-        // Only request once
-        guard !hasRequestedPermission else { return }
-        hasRequestedPermission = true
-        
-        Task.detached(priority: .utility) {
-            let store = CNContactStore()
-            let status = CNContactStore.authorizationStatus(for: .contacts)
-            
-            if status == .authorized {
-                await MainActor.run { contactAccessGranted = true }
-                return
-            }
-            
-            if status == .notDetermined {
-                do {
-                    let granted = try await store.requestAccess(for: .contacts)
-                    await MainActor.run { contactAccessGranted = granted }
-                } catch {
-                    print("Error requesting contact access: \(error)")
-                }
-            }
+
+    // Saves the connection to Firestore first, then attempts a best-effort
+    // confirmation. A phone number gets a confirmation SMS via the same
+    // Firestore -> Cloud Function -> AWS SNS pipeline the missed-dose alerts
+    // use, so it works from the Simulator and doesn't depend on the device's
+    // own Messages app. Email still uses the native Mail compose sheet since
+    // there's no server-side email pipeline. Neither confirmation blocks the
+    // connection from being added.
+    private func addConnectionAndConfirm() {
+        guard !phoneNumber.isEmpty || !email.isEmpty else {
+            successMessage = "This contact has no phone number or email address."
+            showSuccessAlert = true
+            return
+        }
+
+        let newConnection = SharedPerson(
+            name: selectedContactName.isEmpty ? (phoneNumber.isEmpty ? email : phoneNumber) : selectedContactName,
+            phoneNumber: phoneNumber.isEmpty ? nil : phoneNumber,
+            email: email.isEmpty ? nil : email
+        )
+        onConnectionAdded?(newConnection)
+        connectionWasAdded = true
+
+        if !phoneNumber.isEmpty {
+            ConnectionConfirmationService.shared.sendConfirmation(phone: phoneNumber, message: confirmationMessage)
+            finish("Added \(newConnection.name) to your shared connections. A confirmation text is on its way.")
+        } else if MailComposeView.canSendMail {
+            showMailCompose = true
+        } else {
+            finish("Added \(newConnection.name) to your shared connections.")
         }
     }
-    
+
+    private func finish(_ message: String) {
+        successMessage = message
+        showSuccessAlert = true
+        clearFields()
+    }
+
     private func clearFields() {
         phoneNumber = ""
         email = ""
-        searchText = ""
-        searchResults = []
         selectedContactName = ""
     }
-    
-    private func searchContacts() {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Quick validations without blocking
-        guard query.count >= 2 else {
-            searchResults = []
-            isSearching = false
-            return
-        }
-        
-        let status = CNContactStore.authorizationStatus(for: .contacts)
-        
-        guard status == .authorized else {
-            if status == .notDetermined && !hasRequestedPermission {
-                requestContactAccess()
-            }
-            return
-        }
-        
-        // Mark as searching on main thread
-        isSearching = true
-        
-        // Do ALL the work in background
-        Task.detached(priority: .userInitiated) {
-            let store = CNContactStore()
-            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactEmailAddressesKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
-            
-            let foundContacts: [ContactSearchResult]
-            
-            do {
-                let predicate = CNContact.predicateForContacts(matchingName: query)
-                let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keys)
-                
-                foundContacts = contacts.map { contact in
-                    let fullName = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
-                    return ContactSearchResult(
-                        contact: contact,
-                        name: fullName.isEmpty ? "No Name" : fullName,
-                        email: contact.emailAddresses.first.map { String($0.value) },
-                        phoneNumber: contact.phoneNumbers.first?.value.stringValue
-                    )
-                }
-            } catch {
-                print("Contact search error: \(error)")
-                foundContacts = []
-            }
-            
-            // Update UI only once at the end
-            await MainActor.run {
-                self.searchResults = foundContacts
-                self.isSearching = false
-            }
-        }
-    }
-    
-    private func selectSearchResult(_ result: ContactSearchResult) {
-        updateFromContact(result.contact)
-        searchText = ""
-        searchResults = []
-        isSearchFocused = false
-        
-        // Automatically send confirmation if we have a phone number
-        if !phoneNumber.isEmpty {
-            // Wait a brief moment for UI to update
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                if MessageComposeView.canSendText {
-                    showMessageCompose = true
-                } else {
-                    successMessage = "SMS is not available. Cannot send confirmation."
-                    showSuccessAlert = true
-                }
-            }
-        } else if !email.isEmpty {
-            // Fallback to email if no phone number
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                if MailComposeView.canSendMail {
-                    showMailCompose = true
-                } else {
-                    successMessage = "Mail is not configured. Cannot send confirmation."
-                    showSuccessAlert = true
-                }
-            }
-        } else {
-            // No contact info available
-            successMessage = "This contact has no phone number or email address."
-            showSuccessAlert = true
-        }
-    }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Search Bar
@@ -523,28 +388,7 @@ struct ShareWithSomeoneView: View {
             .padding(.bottom, 32)
             
             // Send Button
-            Button(action: {
-                // Prioritize phone if both are present
-                if !phoneNumber.isEmpty {
-                    print("Phone number entered: \(phoneNumber)")
-                    print("Can send text: \(MessageComposeView.canSendText)")
-                    if MessageComposeView.canSendText {
-                        showMessageCompose = true
-                    } else {
-                        successMessage = "SMS is not available on this device."
-                        showSuccessAlert = true
-                    }
-                } else if !email.isEmpty {
-                    print("Email entered: \(email)")
-                    print("Can send mail: \(MailComposeView.canSendMail)")
-                    if MailComposeView.canSendMail {
-                        showMailCompose = true
-                    } else {
-                        successMessage = "Mail is not configured on this device."
-                        showSuccessAlert = true
-                    }
-                }
-            }) {
+            Button(action: addConnectionAndConfirm) {
                 Text("Add Connection")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -561,59 +405,20 @@ struct ShareWithSomeoneView: View {
         .background(Color.tabiBG)
         .navigationTitle("Share with")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showMessageCompose) {
-            MessageComposeView(recipients: [phoneNumber], body: confirmationMessage) { result in
-                print("Message compose result: \(result)")
-                DispatchQueue.main.async {
-                    switch result {
-                    case .sent:
-                        let newConnection = SharedPerson(
-                            name: selectedContactName.isEmpty ? phoneNumber : selectedContactName,
-                            phoneNumber: phoneNumber,
-                            email: email.isEmpty ? nil : email
-                        )
-                        onConnectionAdded?(newConnection)
-                        successMessage = "Successfully added \(newConnection.name) to your shared connections!"
-                        showSuccessAlert = true
-                        clearFields()
-                    case .failed:
-                        successMessage = "Failed to send confirmation message."
-                        showSuccessAlert = true
-                    case .cancelled:
-                        successMessage = "Connection cancelled."
-                        showSuccessAlert = true
-                    @unknown default:
-                        break
-                    }
-                }
-            }
-        }
         .sheet(isPresented: $showMailCompose) {
             MailComposeView(recipients: [email], subject: "Medication Schedule Subscription", body: confirmationMessage) { result in
-                print("Mail compose result: \(result)")
                 DispatchQueue.main.async {
                     switch result {
                     case .sent:
-                        let newConnection = SharedPerson(
-                            name: selectedContactName.isEmpty ? email : selectedContactName,
-                            phoneNumber: phoneNumber.isEmpty ? nil : phoneNumber,
-                            email: email
-                        )
-                        onConnectionAdded?(newConnection)
-                        successMessage = "Successfully added \(newConnection.name) to your shared connections!"
-                        showSuccessAlert = true
-                        clearFields()
+                        finish("Added to your shared connections and sent a confirmation email.")
                     case .failed:
-                        successMessage = "Failed to send confirmation email."
-                        showSuccessAlert = true
+                        finish("Added to your shared connections, but the confirmation email failed to send.")
                     case .cancelled:
-                        successMessage = "Connection cancelled."
-                        showSuccessAlert = true
+                        finish("Added to your shared connections. Confirmation email not sent.")
                     case .saved:
-                        successMessage = "Confirmation email saved as draft."
-                        showSuccessAlert = true
+                        finish("Added to your shared connections. Confirmation email saved as draft.")
                     @unknown default:
-                        break
+                        finish("Added to your shared connections.")
                     }
                 }
             }
@@ -622,39 +427,17 @@ struct ShareWithSomeoneView: View {
             // This runs after the contact picker is fully dismissed
             if let contact = selectedContact {
                 updateFromContact(contact)
-                
-                print("=== Contact Selected ===")
-                print("Name: \(contact.givenName) \(contact.familyName)")
-                print("Phone: \(phoneNumber)")
-                print("Email: \(email)")
-                print("Can send text: \(MessageComposeView.canSendText)")
-                
-                // Wait for picker sheet to fully close before opening SMS
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                    if !phoneNumber.isEmpty {
-                        print("Opening SMS composer...")
-                        showMessageCompose = true
-                    } else if !email.isEmpty {
-                        print("Opening email composer...")
-                        showMailCompose = true
-                    } else {
-                        print("No contact info available")
-                        successMessage = "This contact has no phone number or email address."
-                        showSuccessAlert = true
-                    }
+                // Wait for picker sheet to fully close before adding the connection
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    addConnectionAndConfirm()
                 }
-            } else {
-                print("No contact was selected")
             }
         }) {
             ContactPicker(selectedContact: $selectedContact)
         }
         .alert("Connection Status", isPresented: $showSuccessAlert) {
             Button("OK", role: .cancel) {
-                // Only dismiss if connection was successfully added
-                if successMessage.contains("Successfully added") {
-                    dismiss()
-                }
+                if connectionWasAdded { dismiss() }
             }
         } message: {
             Text(successMessage)

@@ -44,7 +44,10 @@ Tabi/
 │   ├── AuthenticationManager.swift — Firebase Auth singleton (Sign in with Apple + Google)
 │   ├── CalendarPersistenceManager.swift
 │   ├── MedicationScheduleParser.swift
-│   └── NotificationScheduler.swift
+│   ├── NotificationScheduler.swift
+│   ├── MissedDoseAlertService.swift — fans out a missed-dose SMS alert doc per caretaker to Firestore
+│   ├── ConnectionConfirmationService.swift — writes a caretaker-added SMS confirmation doc to Firestore
+│   └── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
 └── Views/
     ├── Today/    — TodayView, WeekStripHeader, TABIMedicationRow
     ├── Calendar/ — CalendarView + calendar subcomponents
@@ -166,3 +169,4 @@ let passedCount = times.filter { $0 < Date() }.count
 - `Services/FirestoreHelpers.swift` provides `firestoreDict()` and `decoded(from:)` extensions on `Encodable`/`Decodable`. Use these instead of writing inline `JSONEncoder → JSONSerialization` in any new Firestore persistence code.
 - `GoogleService-Info.plist` is gitignored — never commit it. Obtain it from a teammate.
 - `PRODUCT_BUNDLE_IDENTIFIER` (the `Tabi` target's build setting) must match `GoogleService-Info.plist`'s `BUNDLE_ID`. Because the plist is gitignored, a mismatch never shows up in a PR diff — a "Verify GoogleService-Info.plist bundle ID" build phase checks this on every build and fails loudly if they diverge. If you change the bundle ID, re-download the plist from the Firebase console for that bundle ID.
+- All outbound SMS goes through `sendSms()` in `functions/index.js`, which appends the AWS toll-free/10DLC-required "Reply STOP to unsubscribe, HELP for help." footer to every message. Don't add that language at a call site (client or function) — it's enforced once, centrally, so it can't be dropped by a future caller. New Firestore collections that trigger an SMS-sending Cloud Function need an explicit `match` rule in `firestore.rules` — the default is deny-all, and a missing rule fails silently (client write is rejected, no error surfaced).
