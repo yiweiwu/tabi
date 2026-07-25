@@ -308,7 +308,7 @@ struct MedicineTrackingPageView: View {
 
 struct PillRemindersPageView: View {
     @Environment(OnboardingCoordinator.self) private var coordinator
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Skip button
@@ -319,46 +319,20 @@ struct PillRemindersPageView: View {
                         coordinator.currentPage = .authentication
                     }
                 }
-                .foregroundColor(.tabiGray)
+                .foregroundColor(.tabiLavender)
                 .font(.body)
                 .padding(.top, 16)
                 .padding(.trailing, 24)
             }
-            
-            Spacer()
-            
-            // Image/Illustration Area
-            ZStack {
-                // Background image simulation
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 280, height: 380)
-                
-                VStack {
-                    // Person image placeholder
-                    RoundedRectangle(cornerRadius: 0)
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 280, height: 220)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 60))
-                                .foregroundColor(.white.opacity(0.7))
-                        )
-                    
-                    Spacer()
-                    
-                    // Pill reminder cards
-                    HStack(spacing: 12) {
-                        PillReminderCard(color: .purple.opacity(0.4), time: "8 A", label: "PILL A")
-                        PillReminderCard(color: .yellow.opacity(0.5), time: "2 A", label: "PILL B")
-                        PillReminderCard(color: .yellow.opacity(0.6), time: "8 P", label: "PILL C")
-                    }
-                    .padding(.bottom, 20)
-                }
-                .frame(width: 280, height: 380)
-            }
-            .padding(.bottom, 40)
-            
+
+            Spacer(minLength: 24)
+
+            // Medication list preview with notification callout
+            MedicationListPreviewCard()
+                .frame(width: 280)
+
+            Spacer(minLength: 24)
+
             // Page indicator dots
             HStack(spacing: 8) {
                 Circle()
@@ -372,7 +346,7 @@ struct PillRemindersPageView: View {
                     .frame(width: 8, height: 8)
             }
             .padding(.bottom, 20)
-            
+
             // Title
             Text("Personalized Pill Reminders")
                 .font(.title2)
@@ -381,15 +355,149 @@ struct PillRemindersPageView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
                 .padding(.bottom, 12)
-            
+
             // Description
-            Text("We'll remind you when to take your pill so you stay on track.")
+            Text("We'll remind you right on time. Get notified so you never miss a dose.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
                 .padding(.bottom, 120)
         }
+    }
+}
+
+// MARK: - Medication List Preview (pill reminders illustration)
+
+struct MedicationListPreviewCard: View {
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("My Medications")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "bell")
+                        .foregroundColor(.tabiLavender)
+                }
+
+                Divider()
+
+                Text("Today")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+
+                VStack(spacing: 8) {
+                    MedPreviewRow(color: pillColors[1], name: "Pill A", time: "8:00 AM")
+                    MedPreviewRow(color: pillColors[2], name: "Pill B", time: "2:00 PM")
+                    MedPreviewRow(color: pillColors[4], name: "Pill C", time: "8:00 PM")
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(Color.tabiLavLight)
+            )
+
+            NotificationBubble()
+                .padding(.leading, 4)
+                .offset(y: 66)
+        }
+    }
+}
+
+struct MedPreviewRow: View {
+    let color: Color
+    let name: String
+    let time: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(color.opacity(0.2))
+                .frame(width: 36, height: 36)
+                .overlay(
+                    Image(systemName: "pill.fill")
+                        .font(.system(size: 15))
+                        .foregroundColor(color)
+                        .rotationEffect(.degrees(-45))
+                )
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                Text("1 tablet")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Text(time)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundColor(color)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule().fill(color.opacity(0.16))
+                )
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.tabiCard)
+        )
+    }
+}
+
+struct NotificationBubble: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .fill(Color.tabiLavender)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: "bell.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                    )
+                Circle()
+                    .fill(Color.tabiRed)
+                    .frame(width: 10, height: 10)
+                    .offset(x: 3, y: -3)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Time to take Pill A")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text("now")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.tabiLavender)
+                }
+                Text("It's time for your 8:00 AM dose.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.tabiCard)
+                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
+        )
     }
 }
 
@@ -462,33 +570,6 @@ struct FamilySharingPageView: View {
                 .padding(.horizontal, 40)
                 .padding(.bottom, 120)
         }
-    }
-}
-
-// MARK: - Pill Reminder Card Component
-
-struct PillReminderCard: View {
-    let color: Color
-    let time: String
-    let label: String
-    
-    var body: some View {
-        VStack(spacing: 4) {
-            Text(label)
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-            
-            Text(time)
-                .font(.title3)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
-        }
-        .frame(width: 70, height: 70)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(color)
-        )
     }
 }
 
