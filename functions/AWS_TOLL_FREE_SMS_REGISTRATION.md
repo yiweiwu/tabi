@@ -32,3 +32,13 @@ This guidance describes AWS's default suggested workflow: a **marketing** websit
 - Messages are transactional missed-dose alerts, not marketing — so "promotional/marketing SMS" and "consent is not a condition of purchase" language don't apply as written.
 
 If AWS's registration review pushes back citing this checklist, the relevant answer is that Tabi's flow is a double opt-in via SMS-link confirmation, not a marketing checkbox form — see the actual submitted "Opt-in workflow description" for the registration record.
+
+## Registered sender identity
+
+The registration's Company Info is filed as an individual sole proprietor, **Yi-Wei Wu** — there's no LLC or DBA for "Tabi" yet. AWS's registration review requires message samples to identify that registrant, not just the app name, so the resubmitted `messageSample2` reads:
+
+> Hi [name], it's Tabi from Yi-Wei Wu. [patient] added you to get a text if they miss a dose. Confirm here: [link] Reply STOP to unsubscribe, HELP for help.
+
+**Follow-ups (not yet done):**
+- Update the live message in `index.js`'s `sendConnectionConfirmation` to say "it's Tabi from Yi-Wei Wu" to match the registered sample — right now it just says "it's Tabi." Registered samples and live traffic need to match; carriers check this post-approval, not just at submission time.
+- Longer-term, if Tabi files a DBA, the Company Info field can be updated to "Tabi" directly and "from Yi-Wei Wu" can be dropped from messages.
