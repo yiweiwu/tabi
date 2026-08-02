@@ -39,6 +39,6 @@ The registration's Company Info is filed as an individual sole proprietor, **Yi-
 
 > Hi [name], it's Tabi from Yi-Wei Wu. [patient] added you to get a text if they miss a dose. Confirm here: [link] Reply STOP to unsubscribe, HELP for help.
 
-**Follow-ups (not yet done):**
-- Update the live message in `index.js`'s `sendConnectionConfirmation` to say "it's Tabi from Yi-Wei Wu" to match the registered sample — right now it just says "it's Tabi." Registered samples and live traffic need to match; carriers check this post-approval, not just at submission time.
-- Longer-term, if Tabi files a DBA, the Company Info field can be updated to "Tabi" directly and "from Yi-Wei Wu" can be dropped from messages.
+**Follow-ups:**
+- Done — `index.js`'s `sendConnectionConfirmation` now says "it's Tabi from Yi-Wei Wu", matching the registered sample.
+- Still open: if Tabi files a DBA, the Company Info field can be updated to "Tabi" directly and "from Yi-Wei Wu" can be dropped from messages.

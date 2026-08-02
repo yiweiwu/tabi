@@ -74,7 +74,7 @@ exports.sendConnectionConfirmation = onDocumentCreated(
       const confirmUrl = `${CONFIRM_BASE_URL}` +
         `?uid=${encodeURIComponent(data.uid)}` +
         `&id=${encodeURIComponent(data.sharedPersonId)}`;
-      const message = `Hi ${data.contactName}, it's Tabi. ` +
+      const message = `Hi ${data.contactName}, it's Tabi from Yi-Wei Wu. ` +
         `${data.patientName} added you to get a text if they miss a dose. ` +
         `Confirm here: ${confirmUrl}`;
       await sendSms(data.phone, message);
