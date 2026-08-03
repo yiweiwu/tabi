@@ -52,7 +52,7 @@ Tabi/
     ├── Today/    — TodayView, WeekStripHeader, TABIMedicationRow
     ├── Calendar/ — CalendarView + calendar subcomponents
     ├── Sharing/  — SharingView
-    ├── Profile/  — ProfileView
+    ├── Profile/  — ProfileView (incl. SettingsView), PrivacyPolicyView
     ├── Camera/   — NewMedicationCameraView, CameraView, DetectedMedicationView, AnalysisResultView
     └── Progress/ — MedicationProgressView, AchievementRow, WeeklyProgressView
 ```
@@ -130,6 +130,23 @@ Stored models: `Medication`, `DoseEntry`, `SharedPerson`. Firestore paths are sc
 - `users/{uid}/medications/{id}`
 - `users/{uid}/doses/{medicationId}` (contains `entries` array)
 - `users/{uid}/sharedPeople/{id}`
+
+### Privacy & compliance
+
+Tabi stores medication, dosage, and profile data that's regulated under CMIA,
+Washington's My Health My Data Act, and CCPA/CPRA even though HIPAA itself
+doesn't apply to us as a direct-to-consumer app. Before adding any feature that
+shares user data with a third party (including caretaker SMS), adds a new
+stored field, or touches analytics/research/monetization, read
+`PRIVACY_COMPLIANCE.md` at the repo root — it has the specific guardrails and a
+pre-flight checklist.
+
+User-facing legal docs live at the repo root: `PRIVACY_POLICY.md` and
+`TERMS_OF_SERVICE.md` (mirrored in-app via `PrivacyPolicyView.swift`, linked
+from the auth screen and Settings → Privacy). `AuthenticationManager.deleteAccountAndAllData()`
+plus `MedicationManager.deleteAllLocalData()` implement the account/data
+deletion these documents promise — keep both in sync if the deletion scope
+ever changes.
 
 ## Dose Tracking Logic
 
