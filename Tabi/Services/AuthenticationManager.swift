@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import CryptoKit
 import FirebaseAuth
+import FirebaseFirestore
 import GoogleSignIn
 
 // MARK: - Authentication Manager
@@ -11,6 +12,7 @@ enum AuthenticationError: LocalizedError {
     case missingAppleNonce
     case missingGoogleIDToken
     case missingGoogleClientID
+    case notSignedIn
 
     var errorDescription: String? {
         switch self {
@@ -18,6 +20,7 @@ enum AuthenticationError: LocalizedError {
         case .missingAppleNonce: return "Missing sign-in nonce. Please try again."
         case .missingGoogleIDToken: return "Google did not return an ID token."
         case .missingGoogleClientID: return "Google sign-in isn't configured yet. Please try again later."
+        case .notSignedIn: return "You're not signed in."
         }
     }
 }
@@ -80,6 +83,30 @@ class AuthenticationManager {
 
     func signOut() throws {
         try Auth.auth().signOut()
+    }
+
+    // MARK: Delete account & data
+
+    // Wipes the Firestore-backed data this uid owns, then deletes the Auth
+    // account itself. Firebase requires a "recent" sign-in for account
+    // deletion (Auth.Error.Code.requiresRecentLogin) - callers should surface
+    // that error by asking the user to sign in again and retry, not treat it
+    // as a generic failure.
+    func deleteAccountAndAllData() async throws {
+        guard let uid, let user = currentUser else {
+            throw AuthenticationError.notSignedIn
+        }
+        let db = Firestore.firestore()
+        try await deleteAllDocuments(in: db.collection("users").document(uid).collection("doses"))
+        try await deleteAllDocuments(in: db.collection("users").document(uid).collection("sharedPeople"))
+        try await user.delete()
+    }
+
+    private func deleteAllDocuments(in collection: CollectionReference) async throws {
+        let snapshot = try await collection.getDocuments()
+        for document in snapshot.documents {
+            try await document.reference.delete()
+        }
     }
 
     // MARK: Nonce helpers (standard Firebase Sign in with Apple boilerplate)

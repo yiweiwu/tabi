@@ -26,58 +26,58 @@ struct PermissionsPageView: View {
             }
             
             VStack(spacing: 40) {
-            Spacer()
-            
-            // Header
-            VStack(spacing: 16) {
-                Image(systemName: "checkmark.shield.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(.tabiLavender)
+                Spacer()
                 
-                Text("Enable Permissions")
-                    .font(.title.bold())
-                    .foregroundColor(.primary)
+                // Header
+                VStack(spacing: 16) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.tabiLavender)
+                    
+                    Text("Enable Permissions")
+                        .font(.title.bold())
+                        .foregroundColor(.primary)
+                    
+                    Text("Allow Tabi to help you stay on track")
+                        .font(.body)
+                        .foregroundColor(.tabiGray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
                 
-                Text("Allow Tabi to help you stay on track")
-                    .font(.body)
+                Spacer()
+                
+                // Permission Items
+                VStack(spacing: 20) {
+                    PermissionItemView(
+                        icon: "camera.fill",
+                        title: "Camera Access",
+                        description: "Scan medication labels to quickly add them to your list",
+                        status: cameraStatus,
+                        action: requestCameraPermission
+                    )
+                    
+                    PermissionItemView(
+                        icon: "bell.fill",
+                        title: "Push Notifications",
+                        description: "Get reminders so you never miss taking your medications",
+                        status: notificationStatus,
+                        action: requestNotificationPermission
+                    )
+                }
+                .padding(.horizontal, 32)
+                
+                Spacer()
+                
+                // Info text
+                Text("You can change these permissions anytime in Settings")
+                    .font(.caption)
                     .foregroundColor(.tabiGray)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
+                    .padding(.bottom, 20)
             }
-            
-            Spacer()
-            
-            // Permission Items
-            VStack(spacing: 20) {
-                PermissionItemView(
-                    icon: "camera.fill",
-                    title: "Camera Access",
-                    description: "Scan medication labels to quickly add them to your list",
-                    status: cameraStatus,
-                    action: requestCameraPermission
-                )
-                
-                PermissionItemView(
-                    icon: "bell.fill",
-                    title: "Push Notifications",
-                    description: "Get reminders so you never miss taking your medications",
-                    status: notificationStatus,
-                    action: requestNotificationPermission
-                )
-            }
-            .padding(.horizontal, 32)
-            
-            Spacer()
-            
-            // Info text
-            Text("You can change these permissions anytime in Settings")
-                .font(.caption)
-                .foregroundColor(.tabiGray)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-                .padding(.bottom, 20)
-        }
-        .padding(.vertical, 40)
+            .padding(.vertical, 40)
         }
         .onAppear {
             checkPermissionStatuses()

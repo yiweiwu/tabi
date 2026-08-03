@@ -157,7 +157,7 @@ struct ProfileView: View {
             PharmaciesView(userProfile: $medicationManager.userProfile)
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsView(userProfile: $medicationManager.userProfile)
+            SettingsView(medicationManager: medicationManager)
         }
         .onChange(of: selectedPhoto) { _, newValue in
             Task {
@@ -797,28 +797,32 @@ extension LocationSearchService: MKLocalSearchCompleterDelegate {
 
 // MARK: - Settings View
 struct SettingsView: View {
-    @Binding var userProfile: UserProfile
+    @ObservedObject var medicationManager: MedicationManager
     @Environment(\.dismiss) private var dismiss
     @StateObject private var locationManager = LocationManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @State private var showResetAlert = false
-    
+    @State private var showingPrivacyPolicy = false
+    @State private var showDeleteAccountAlert = false
+    @State private var isDeletingAccount = false
+    @State private var deleteAccountError: String?
+
     let countries = [
-        "United States", "Canada", "United Kingdom", "Australia", 
+        "United States", "Canada", "United Kingdom", "Australia",
         "Germany", "France", "Spain", "Italy", "Japan", "Other"
     ]
-    
+
     var body: some View {
         NavigationView {
             Form {
                 Section("Preferences") {
-                    Picker("Units", selection: $userProfile.settings.unitSystem) {
+                    Picker("Units", selection: $medicationManager.userProfile.settings.unitSystem) {
                         ForEach(UserSettings.UnitSystem.allCases, id: \.self) { unit in
                             Text(unit.rawValue).tag(unit)
                         }
                     }
                 }
-                
+
                 Section("Location") {
                     HStack {
                         Text("Location Permission")
@@ -828,52 +832,86 @@ struct SettingsView: View {
                                 UIApplication.shared.open(url)
                             }
                         } label: {
-                            Text(locationManager.authorizationStatus == .authorizedWhenInUse || 
+                            Text(locationManager.authorizationStatus == .authorizedWhenInUse ||
                                  locationManager.authorizationStatus == .authorizedAlways ? "Enabled" : "Disabled")
-                                .foregroundColor(locationManager.authorizationStatus == .authorizedWhenInUse || 
+                                .foregroundColor(locationManager.authorizationStatus == .authorizedWhenInUse ||
                                                locationManager.authorizationStatus == .authorizedAlways ? .green : .red)
                         }
                     }
-                    
-                    Picker("Country of Residence", selection: $userProfile.settings.countryOfResidence) {
+
+                    Picker("Country of Residence", selection: $medicationManager.userProfile.settings.countryOfResidence) {
                         ForEach(countries, id: \.self) { country in
                             Text(country).tag(country)
                         }
                     }
                 }
-                
+
                 Section("Account") {
-                    TextField("Email Address", text: $userProfile.settings.emailAddress)
+                    TextField("Email Address", text: $medicationManager.userProfile.settings.emailAddress)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
-                
+
                 Section("Security") {
-                    Toggle("Face ID / Touch ID", isOn: $userProfile.settings.faceIDEnabled)
-                        .onChange(of: userProfile.settings.faceIDEnabled) { _, newValue in
+                    Toggle("Face ID / Touch ID", isOn: $medicationManager.userProfile.settings.faceIDEnabled)
+                        .onChange(of: medicationManager.userProfile.settings.faceIDEnabled) { _, newValue in
                             if newValue {
                                 authenticateWithBiometrics { success in
                                     if !success {
-                                        userProfile.settings.faceIDEnabled = false
+                                        medicationManager.userProfile.settings.faceIDEnabled = false
                                     }
                                 }
                             }
                         }
-                    
-                    if userProfile.settings.faceIDEnabled {
+
+                    if medicationManager.userProfile.settings.faceIDEnabled {
                         Text("Biometric authentication is enabled")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
-                
+
+                Section("Privacy") {
+                    Button {
+                        showingPrivacyPolicy = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "hand.raised")
+                            Text("Privacy Policy")
+                        }
+                    }
+
+                    if isDeletingAccount {
+                        HStack {
+                            ProgressView()
+                            Text("Deleting your account…")
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button(role: .destructive) {
+                            showDeleteAccountAlert = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("Delete My Account & Data")
+                            }
+                        }
+                    }
+
+                    if let deleteAccountError {
+                        Text(deleteAccountError)
+                            .font(.caption)
+                            .foregroundColor(.tabiRed)
+                    }
+                }
+
                 Section {
                     Text("App Version 1.0.0")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Section("Developer") {
                     Button(role: .destructive) {
                         showResetAlert = true
@@ -894,6 +932,9 @@ struct SettingsView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showingPrivacyPolicy) {
+                PrivacyPolicyView()
+            }
             .alert("Reset Onboarding?", isPresented: $showResetAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Reset", role: .destructive) {
@@ -903,12 +944,37 @@ struct SettingsView: View {
             } message: {
                 Text("The app will restart and show the onboarding flow again. This is for testing purposes only.")
             }
+            .alert("Delete Account & Data?", isPresented: $showDeleteAccountAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteAccount()
+                }
+            } message: {
+                Text("This permanently deletes your medications, dose history, and shared connections. This can't be undone.")
+            }
         }
         .onAppear {
             locationManager.checkAuthorization()
         }
     }
-    
+
+    private func deleteAccount() {
+        isDeletingAccount = true
+        deleteAccountError = nil
+        Task {
+            do {
+                try await AuthenticationManager.shared.deleteAccountAndAllData()
+                medicationManager.deleteAllLocalData()
+                isDeletingAccount = false
+                hasCompletedOnboarding = false
+                dismiss()
+            } catch {
+                isDeletingAccount = false
+                deleteAccountError = error.localizedDescription
+            }
+        }
+    }
+
     private func authenticateWithBiometrics(completion: @escaping (Bool) -> Void) {
         let context = LAContext()
         var error: NSError?

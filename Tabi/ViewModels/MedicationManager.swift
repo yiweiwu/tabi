@@ -76,6 +76,18 @@ class MedicationManager: ObservableObject {
         gameStats.currentStreak = medications.allSatisfy { !$0.isOverdue } ? gameStats.currentStreak + 1 : 0
         gameStats.level = gameStats.calculatedLevel
     }
+
+    // Clears everything stored on-device. Firestore-backed data (doses,
+    // sharedPeople) is deleted separately via
+    // AuthenticationManager.deleteAccountAndAllData() - this only covers what
+    // MedicationManager itself owns in UserDefaults.
+    func deleteAllLocalData() {
+        NotificationScheduler.shared.cancelAll()
+        medications = []
+        userDefaults.removeObject(forKey: medicationsKey)
+        gameStats = GameStats()
+        userProfile = UserProfile()
+    }
 }
 
 // MARK: - User Profile

@@ -398,8 +398,15 @@ struct ShareWithSomeoneView: View {
             .background(Color.tabiCard)
             .cornerRadius(14)
             .padding(.horizontal, 16)
-            .padding(.bottom, 32)
-            
+            .padding(.bottom, 12)
+
+            Text("They'll see your medication names, schedule, and get notified if you miss a dose.")
+                .font(.caption)
+                .foregroundColor(.tabiGray)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+                .padding(.bottom, 20)
+
             // Send Button
             Button(action: addConnectionAndConfirm) {
                 Text("Add Connection")

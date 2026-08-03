@@ -12,6 +12,7 @@ struct AuthenticationPageView: View {
     @State private var isSigningIn = false
     @State private var authError: String?
     @State private var appleSignInCoordinator = AppleSignInCoordinator()
+    @State private var showingPrivacyPolicy = false
     
     var body: some View {
         ZStack {
@@ -163,7 +164,26 @@ struct AuthenticationPageView: View {
                         Spacer()
                     }
                     .padding(.top, 12)
-                    
+
+                    // Terms & Privacy disclosure — one Button around a
+                    // concatenated Text so the sentence wraps as a single
+                    // paragraph instead of an HStack splitting mid-line on
+                    // narrow screens; the whole line is tappable, with
+                    // "Privacy Policy" styled to signal it's the link.
+                    Button {
+                        showingPrivacyPolicy = true
+                    } label: {
+                        (Text("By continuing, you agree to Tabi's Terms and ")
+                            .foregroundColor(.tabiGray)
+                        + Text("Privacy Policy")
+                            .foregroundColor(.tabiLavender)
+                            .fontWeight(.semibold))
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.top, 12)
+
                     // Sign in link
                     HStack(spacing: 4) {
                         Text("Do you have account?")
@@ -190,15 +210,9 @@ struct AuthenticationPageView: View {
                             coordinator.currentPage = .profileSetup
                         }
                     }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.black.opacity(0.6))
-                    )
-                    .padding(.top, 50)
+                    .foregroundColor(.tabiGray)
+                    .font(.body)
+                    .padding(.top, 16)
                     .padding(.trailing, 24)
                 }
                 Spacer()
@@ -221,6 +235,9 @@ struct AuthenticationPageView: View {
         }
         .sheet(isPresented: $showPhoneSignUp) {
             PhoneSignUpSheet()
+        }
+        .sheet(isPresented: $showingPrivacyPolicy) {
+            PrivacyPolicyView()
         }
     }
 

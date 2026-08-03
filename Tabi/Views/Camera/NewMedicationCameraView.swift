@@ -21,6 +21,8 @@ struct NewMedicationCameraView: View {
     @State private var captureResult: CaptureResult?
     @State private var hasAttemptedSetup = false
     @State private var simulatorImage: UIImage?
+    @AppStorage("hasSeenGeminiDisclosure") private var hasSeenGeminiDisclosure = false
+    @State private var showGeminiTooltip = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -60,6 +62,13 @@ struct NewMedicationCameraView: View {
             .zIndex(1)
         }
         .onAppear {
+            // Auto-opens the tooltip once, the first time this screen is
+            // ever seen; the info icon stays available afterward so someone
+            // can re-read it later, but it won't pop up unprompted again.
+            if !hasSeenGeminiDisclosure {
+                showGeminiTooltip = true
+                hasSeenGeminiDisclosure = true
+            }
             if kNewMedIsSimulator {
                 let path = Bundle.main.path(forResource: "Med_Hydrocodone", ofType: "jpeg")
                 simulatorImage = path.flatMap { UIImage(contentsOfFile: $0) }
@@ -137,15 +146,63 @@ struct NewMedicationCameraView: View {
                 Spacer()
             }
 
-            Button(action: kNewMedIsSimulator ? simulatorCapture : deviceCapture) {
-                ZStack {
-                    Circle().fill(Color.tabiOrange).frame(width: 80, height: 80)
-                    Circle().stroke(Color.tabiOrange.opacity(0.4), lineWidth: 6).frame(width: 100, height: 100)
-                    Image(systemName: "camera.fill").font(.title2).foregroundColor(.white)
-                }
+            if showGeminiTooltip {
+                geminiTooltip
+                    .padding(.bottom, 14)
             }
+
+            // Explicit pixel width via UIScreen, same as geminiTooltip below -
+            // this row's trailing Spacer did not actually bound the info
+            // button to the screen edge under normal flexible HStack sizing
+            // (it rendered mostly off the right edge of the screen), so this
+            // sidesteps that by not depending on proposed-size propagation.
+            HStack(spacing: 12) {
+                // Balances the info button's width on the other side so the
+                // shutter button stays visually centered.
+                Color.clear.frame(width: 32, height: 32)
+                Spacer()
+                Button(action: kNewMedIsSimulator ? simulatorCapture : deviceCapture) {
+                    ZStack {
+                        Circle().fill(Color.tabiOrange).frame(width: 80, height: 80)
+                        Circle().stroke(Color.tabiOrange.opacity(0.4), lineWidth: 6).frame(width: 100, height: 100)
+                        Image(systemName: "camera.fill").font(.title2).foregroundColor(.white)
+                    }
+                }
+                .accessibilityLabel("Capture photo")
+                Spacer()
+                Button {
+                    withAnimation { showGeminiTooltip.toggle() }
+                } label: {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 17))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("About AI label processing")
+            }
+            .frame(width: UIScreen.main.bounds.width - 48)
             .padding(.bottom, 50)
         }
+    }
+
+    private var geminiTooltip: some View {
+        // Explicit pixel width via UIScreen rather than a flexible frame -
+        // this view overflowed both screen edges on a single unwrapped line
+        // under every flexible-frame/.overlay/GeometryReader approach tried,
+        // so this sidesteps the ambiguity by not depending on any
+        // proposed-size propagation at all.
+        let bubbleWidth = UIScreen.main.bounds.width - 48
+
+        return Text("Your label's text is sent to a secure AI service to identify the medication, dosage, and schedule. Tap the ⓘ anytime to see this again.")
+            .font(.caption)
+            .foregroundColor(.white)
+            .padding(12)
+            .frame(width: bubbleWidth, alignment: .leading)
+            .background(Color.black.opacity(0.85))
+            .cornerRadius(10)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     private func simulatorCapture() {
