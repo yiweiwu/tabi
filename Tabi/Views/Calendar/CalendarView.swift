@@ -124,23 +124,22 @@ struct WeekCalendarDotGrid: View {
             .padding(.top, 20)
             
             VStack(spacing: 0) {
-                // Day headers (top row) - Enhanced design
+                // Day headers (top row)
                 HStack(spacing: 0) {
                     // Empty space for medication names column
                     Color.clear
                         .frame(width: 100)
-                    
-                    // Day columns with today highlight
+
                     ForEach(weekDays, id: \.self) { day in
                         dayHeaderView(for: day)
                             .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.bottom, 16)
-                
+
                 Divider()
                     .padding(.bottom, 12)
-                
+
                 if medications.isEmpty {
                     Text("No medications added yet")
                         .font(.caption)
@@ -155,6 +154,12 @@ struct WeekCalendarDotGrid: View {
                                 .padding(.vertical, 4)
                         }
                     }
+
+                    Divider()
+                        .padding(.top, 8)
+
+                    legend
+                        .padding(.top, 14)
                 }
             }
             .padding(.horizontal, 20)
@@ -166,156 +171,129 @@ struct WeekCalendarDotGrid: View {
                 .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 2)
         )
     }
-    
+
     private func dayHeaderView(for day: Date) -> some View {
         let isToday = Calendar.current.isDateInToday(day)
-        let isPast = day < Calendar.current.startOfDay(for: Date())
-        
+
         return VStack(spacing: 6) {
             Text(dayLetter(day))
-                .font(.caption.bold())
-                .foregroundColor(isToday ? .white : .tabiGray)
+                .font(.caption.weight(.medium))
+                .foregroundColor(.tabiGray)
             Text("\(Calendar.current.component(.day, from: day))")
-                .font(.system(.caption, design: .rounded).weight(.semibold))
-                .foregroundColor(isToday ? .white : (isPast ? .secondary : .primary))
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(isToday ? .white : .primary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(isToday ? Color.black : Color.clear))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isToday ? 
-                    LinearGradient(colors: [Color.tabiOrange, Color.tabiOrange.opacity(0.8)], 
-                                 startPoint: .topLeading, endPoint: .bottomTrailing) :
-                    LinearGradient(colors: [Color.clear], startPoint: .top, endPoint: .bottom)
-                )
-        )
-        .padding(.horizontal, 2)
     }
-    
+
     private func medicationRow(for medication: Medication) -> some View {
         HStack(spacing: 8) {
-            // Medication name and color indicator - Clean design
-            HStack(spacing: 8) {
-                // Color indicator stripe
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(
-                        LinearGradient(
-                            colors: [medication.pillColor, medication.pillColor.opacity(0.8)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(width: 3, height: 36)
-                    .shadow(color: medication.pillColor.opacity(0.4), radius: 2, x: 0, y: 0)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(medication.name)
-                        .font(.system(.caption, design: .rounded).weight(.semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    HStack(spacing: 3) {
-                        Image(systemName: iconForMedicationType(medication.type))
-                            .font(.system(size: 8))
-                            .foregroundColor(.tabiGray)
-                        Text(medication.type)
-                            .font(.system(size: 9))
-                            .foregroundColor(.tabiGray)
-                    }
-                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(medication.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Text(doseSubtitle(for: medication))
+                    .font(.caption)
+                    .foregroundColor(.tabiGray)
+                    .lineLimit(1)
             }
-            .frame(width: 88, alignment: .leading)
-            
-            // Week bars - Enhanced with animations and gradients
-            HStack(spacing: 4) {
+            .frame(width: 100, alignment: .leading)
+
+            HStack(spacing: 0) {
                 ForEach(weekDays, id: \.self) { day in
-                    dayBar(for: medication, on: day)
+                    dayDot(for: medication, on: day)
                         .frame(maxWidth: .infinity)
                 }
             }
         }
         .padding(.vertical, 10)
     }
-    
-    private func dayBar(for medication: Medication, on day: Date) -> some View {
-        let isActive = isMedicationActive(medication, on: day)
+
+    private func dayDot(for medication: Medication, on day: Date) -> some View {
+        let status = doseDotStatus(for: medication, on: day)
         let isToday = Calendar.current.isDateInToday(day)
-        let isPast = day < Calendar.current.startOfDay(for: Date())
-        
+
         return ZStack {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(
-                    isActive ? 
-                        LinearGradient(
-                            colors: [medication.pillColor.opacity(0.9), medication.pillColor],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ) :
-                        LinearGradient(
-                            colors: [Color.tabiLavLight.opacity(0.4)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                )
-                .frame(height: 40)
-            
-            // Today indicator
             if isToday {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.tabiOrange, lineWidth: 2)
-                    .frame(height: 40)
+                Circle()
+                    .fill(Color.tabiGray.opacity(0.15))
+                    .frame(width: 28, height: 28)
             }
-            
-            if isActive {
-                let allDone = isPast || (isToday && medication.takenTodayCount >= medication.frequencyPerDay)
-                if allDone {
-                    Image(systemName: "checkmark")
-                        .font(.caption.bold())
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
-                } else {
-                    let count = isToday
-                        ? medication.frequencyPerDay - medication.takenTodayCount
-                        : medication.frequencyPerDay
-                    Text("\(count)")
-                        .font(.system(.caption2, design: .rounded).weight(.bold))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
-                }
+            if let status {
+                Circle()
+                    .fill(status.color)
+                    .frame(width: 12, height: 12)
             }
         }
-        .padding(.horizontal, 2)
+        .frame(height: 28)
     }
-    
+
+    private func doseSubtitle(for medication: Medication) -> String {
+        guard medication.frequencyPerDay == 1 else { return medication.dosage }
+        let hour = Calendar.current.component(.hour, from: MedicationScheduleParser.scheduledTimes(for: 1)[0])
+        return "\(medication.dosage) · \(hour < 12 ? "AM" : "PM")"
+    }
+
     private func dayLetter(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "E"
         return String(formatter.string(from: date).prefix(1))
     }
-    
-    private func isMedicationActive(_ medication: Medication, on date: Date) -> Bool {
+
+    // A day is only marked if dose entries exist for it (medication was
+    // already added by that date) - mirrors the "empty/gray" rule in
+    // CLAUDE.md's Calendar active-day check.
+    private func doseDotStatus(for medication: Medication, on day: Date) -> DoseDotStatus? {
         let entries = CalendarPersistenceManager.shared.loadAll(forMedicationId: medication.id)
-        return entries.contains { Calendar.current.isDate($0.scheduledDate, inSameDayAs: date) }
+            .filter { Calendar.current.isDate($0.scheduledDate, inSameDayAs: day) }
+        guard !entries.isEmpty else { return nil }
+
+        let hasMissedOrSkipped = entries.contains {
+            switch $0.status {
+            case .missed, .skipped: return true
+            case .upcoming, .taken: return false
+            }
+        }
+        if hasMissedOrSkipped { return .missed }
+
+        let allTaken = entries.allSatisfy {
+            if case .taken = $0.status { return true }
+            return false
+        }
+        return allTaken ? .taken : .scheduled
     }
-    
-    private func iconForMedicationType(_ type: String) -> String {
-        switch type.lowercased() {
-        case let t where t.contains("drop"):
-            return "drop.fill"
-        case let t where t.contains("tablet"):
-            return "pills.fill"
-        case let t where t.contains("capsule"):
-            return "capsule.fill"
-        case let t where t.contains("chew"):
-            return "circle.fill"
-        case let t where t.contains("liquid"):
-            return "drop.fill"
-        case let t where t.contains("inhaler"):
-            return "wind"
-        case let t where t.contains("injection"):
-            return "syringe.fill"
-        default:
-            return "pills.fill"
+
+    private var legend: some View {
+        HStack(spacing: 20) {
+            Spacer(minLength: 0)
+            legendItem(color: .tabiGreen, label: "Taken")
+            legendItem(color: .tabiRed, label: "Missed")
+            legendItem(color: .black, label: "Scheduled")
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func legendItem(color: Color, label: String) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.tabiGray)
+        }
+    }
+}
+
+private enum DoseDotStatus {
+    case taken, missed, scheduled
+
+    var color: Color {
+        switch self {
+        case .taken:     return .tabiGreen
+        case .missed:    return .tabiRed
+        case .scheduled: return .black
         }
     }
 }

@@ -18,7 +18,7 @@ xcrun xcodebuild test -scheme Tabi -destination 'platform=iOS Simulator,name=iPh
 ## Project Setup
 
 - **Platform**: iOS, SwiftUI, Swift 5.9+
-- **Bundle ID**: `Tabi.Tabi`
+- **Bundle ID**: `com.hellotabi.Tabi`
 - **No `project.pbxproj` edits needed**: The project uses `PBXFileSystemSynchronizedRootGroup`. Any `.swift` file created inside `Tabi/` (or its subdirectories) is automatically compiled. Just create the file.
 - **No cross-file imports**: All files are in the same Swift module. Never add `import Tabi` or inter-file imports within the app target.
 
