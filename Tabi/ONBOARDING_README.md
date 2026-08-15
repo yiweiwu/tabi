@@ -41,6 +41,17 @@ Includes Terms of Service and Privacy Policy links.
 
 The "Next" button is only enabled when a first name is entered.
 
+If the user signed in with Apple or Google, `AuthenticationPageView` prefills
+`coordinator.firstName`/`lastName` from the account's name (via
+`ASAuthorizationAppleIDCredential.fullName` / `GIDGoogleUser.profile`) so a
+new user isn't retyping a name the provider already gave us - only for a
+brand-new account, never overwriting a returning user's already-saved
+profile. `lastName` rides along in `OnboardingCoordinator` even though this
+page has no Last Name field.
+
+This is the only page whose data actually reaches Firestore today - see
+"Data Persistence" below.
+
 ### 5. **Permissions Page** (`PermissionsPageView.swift`)
 Requests two key permissions:
 
@@ -70,9 +81,10 @@ Both permissions can be skipped, but are strongly encouraged.
 ### OnboardingCoordinator
 An `@Observable` class that manages the onboarding state:
 - Tracks current page
-- Stores user profile data (firstName, age, gender)
+- Stores user profile data (firstName, lastName, age, gender)
 - Handles navigation between pages
-- Marks onboarding as complete
+- On `completeOnboarding()`, writes the collected profile fields to
+  `UserProfileStore` (see below) before marking onboarding complete
 
 ### OnboardingView
 The main container view that:
@@ -81,6 +93,35 @@ The main container view that:
 - Handles transitions between pages
 - Validates input before allowing progression
 - Saves onboarding completion state
+
+## 💾 Data Persistence
+
+Onboarding no longer just collects data into `OnboardingCoordinator` and
+discards it - `OnboardingCoordinator.completeOnboarding()` builds a
+`UserProfile` from the collected fields and hands it to
+`UserProfileStore.shared` (`Tabi/Services/UserProfileStore.swift`), which is
+the single owner of profile state for the rest of the app:
+
+- An in-memory `@Published var profile` cache that `ProfileView` (and its
+  edit/allergy/pharmacy/settings sheets) reads and writes directly.
+- A one-shot Firestore fetch (`fetchIfNeeded()`, not a live listener) that
+  populates the cache once per session - called from `TABIApp` at launch
+  (returning signed-in users) and right after sign-in in
+  `AuthenticationPageView` (new/reinstalling users).
+- A write-through save on every mutation, persisted to the `users/{uid}`
+  document in Firestore (see `firestore.rules`).
+
+Because `ContentView`'s `MedicationManager` is created fresh only after
+`hasCompletedOnboarding` flips true, and reads from the same
+`UserProfileStore` singleton, the onboarding flow and the main app's Profile
+tab now share one data source instead of two disconnected copies. There's no
+anonymous/device-ID fallback (matching `CalendarPersistenceManager`'s
+existing pattern for doses): if a user skips the Authentication page, the
+entered name/age/gender stays in the in-memory cache for that session but
+never reaches Firestore.
+
+`profileImageData` was removed entirely - there is no profile picture
+feature in this app.
 
 ## 🎨 Design System
 
@@ -133,12 +174,12 @@ Button("Reset Onboarding") {
 
 ## 🔐 Authentication Integration
 
-The authentication page provides UI for multiple sign-in methods. You'll need to:
+The authentication page provides UI for multiple sign-in methods:
 
-1. **Sign in with Apple**: Already integrated via `AuthenticationServices`
-2. **Google Sign-In**: Add Firebase or Google Sign-In SDK
-3. **Facebook Login**: Add Facebook SDK
-4. **Email/Phone**: Implement your backend authentication
+1. **Sign in with Apple**: integrated via `AuthenticationServices` + `AuthenticationManager`
+2. **Google Sign-In**: integrated via the Google Sign-In SDK + `AuthenticationManager`
+3. **Facebook Login**: UI only - the button prints and advances the page, no SDK wired up
+4. **Email/Phone**: UI only - `EmailSignUpSheet`/`PhoneSignUpSheet` collect input and print it, no backend wired up
 
 ## ✨ Features
 
@@ -179,8 +220,11 @@ Make sure to:
 
 ## 🎯 Next Steps
 
-1. Implement actual authentication backends
-2. Store user profile data to your database
+1. Implement actual authentication backends for Email/Phone/Facebook (Apple
+   and Google are real today; the rest are UI-only stubs that print and
+   advance the page - see `AuthenticationPageView.swift`)
+2. ~~Store user profile data to your database~~ - done, see "Data
+   Persistence" above
 3. Set up analytics to track onboarding completion rates
 4. Add onboarding skip tracking for re-engagement
 5. Implement proper error handling for auth failures

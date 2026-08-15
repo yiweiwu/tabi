@@ -6,7 +6,12 @@ import UIKit
 class MedicationManager: ObservableObject {
     @Published var medications: [Medication] = []
     @Published var gameStats = GameStats()
-    @Published var userProfile = UserProfile()
+
+    // Read-only: UserProfileStore owns profile state (in-memory cache +
+    // Firestore persistence). MedicationManager never fetches, caches, or
+    // writes profile data itself - views that need to edit the profile
+    // observe UserProfileStore directly (see ProfileView).
+    var userProfile: UserProfile { UserProfileStore.shared.profile }
 
     private let userDefaults = UserDefaults.standard
     private let medicationsKey = "savedMedications"
@@ -78,7 +83,7 @@ class MedicationManager: ObservableObject {
     }
 
     // Clears everything stored on-device. Firestore-backed data (doses,
-    // sharedPeople) is deleted separately via
+    // sharedPeople, the profile doc) is deleted separately via
     // AuthenticationManager.deleteAccountAndAllData() - this only covers what
     // MedicationManager itself owns in UserDefaults.
     func deleteAllLocalData() {
@@ -86,20 +91,18 @@ class MedicationManager: ObservableObject {
         medications = []
         userDefaults.removeObject(forKey: medicationsKey)
         gameStats = GameStats()
-        userProfile = UserProfile()
     }
 }
 
 // MARK: - User Profile
 
-struct UserProfile {
+struct UserProfile: Codable {
     var firstName: String = ""
     var lastName: String = ""
     var gender: String = ""
     var age: String = ""
     var height: String = ""
     var weight: String = ""
-    var profileImageData: Data?
     var allergies: [Allergy] = []
     var pharmacies: [Pharmacy] = []
     var settings: UserSettings = UserSettings()
@@ -119,14 +122,14 @@ struct UserProfile {
 
 // MARK: - User Settings
 
-struct UserSettings {
+struct UserSettings: Codable {
     var unitSystem: UnitSystem = .imperial
     var locationPermissionEnabled: Bool = false
     var countryOfResidence: String = "United States"
     var emailAddress: String = ""
     var faceIDEnabled: Bool = false
-    
-    enum UnitSystem: String, CaseIterable {
+
+    enum UnitSystem: String, CaseIterable, Codable {
         case imperial = "Imperial"
         case metric = "Metric"
     }
@@ -134,7 +137,7 @@ struct UserSettings {
 
 // MARK: - Pharmacy
 
-struct Pharmacy: Identifiable, Equatable {
+struct Pharmacy: Identifiable, Equatable, Codable {
     let id = UUID()
     var name: String
     var address: String
@@ -144,15 +147,15 @@ struct Pharmacy: Identifiable, Equatable {
 }
 
 // MARK: - Allergy
-struct Allergy: Identifiable, Equatable {
+struct Allergy: Identifiable, Equatable, Codable {
     let id = UUID()
     var name: String
     var type: AllergyType
     var severity: AllergySeverity
     var symptoms: [String]
     var notes: String
-    
-    enum AllergyType: String, CaseIterable {
+
+    enum AllergyType: String, CaseIterable, Codable {
         case food = "Food"
         case drug = "Drug"
         
@@ -205,7 +208,7 @@ struct Allergy: Identifiable, Equatable {
         }
     }
     
-    enum AllergySeverity: String, CaseIterable {
+    enum AllergySeverity: String, CaseIterable, Codable {
         case mild = "Mild"
         case moderate = "Moderate"
         case severe = "Severe"

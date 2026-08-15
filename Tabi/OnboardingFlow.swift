@@ -10,6 +10,7 @@ class OnboardingCoordinator {
     
     // Profile data
     var firstName = ""
+    var lastName = ""
     var age = ""
     var selectedGender = "Prefer not to say"
     
@@ -76,6 +77,12 @@ class OnboardingCoordinator {
     }
     
     func completeOnboarding() {
+        var profile = UserProfileStore.shared.profile
+        profile.firstName = firstName
+        profile.lastName = lastName
+        profile.age = age
+        profile.gender = selectedGender
+        UserProfileStore.shared.profile = profile
         isOnboardingComplete = true
     }
 }

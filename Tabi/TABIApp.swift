@@ -26,6 +26,12 @@ struct TABIApp: App {
                     OnboardingView(isOnboardingComplete: $hasCompletedOnboarding)
                 }
             }
+            .task {
+                // Covers a returning signed-in user relaunching the app -
+                // the onboarding flow's own sign-in handlers fetch for the
+                // new-signup case instead (see AuthenticationPageView).
+                await UserProfileStore.shared.fetchIfNeeded()
+            }
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)
             }
