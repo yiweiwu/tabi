@@ -43,6 +43,7 @@ Tabi/
 │   ├── CameraManager.swift    — AVFoundation singleton + CameraPreviewView + PhotoCaptureDelegate
 │   ├── AuthenticationManager.swift — Firebase Auth singleton (Sign in with Apple + Google)
 │   ├── CalendarPersistenceManager.swift
+│   ├── UserProfileStore.swift — single owner of `UserProfile` state: in-memory cache + Firestore persistence (the `users/{uid}` doc)
 │   ├── MedicationScheduleParser.swift
 │   ├── NotificationScheduler.swift
 │   ├── MissedDoseAlertService.swift — fans out a missed-dose SMS alert doc per caretaker to Firestore
@@ -126,10 +127,11 @@ Before adding a field, always check whether the answer can be read from data tha
 
 Every extra field is a new source of discrepancy. If existing data can answer the question, use it. Only add a field when the information genuinely cannot be derived at read time.
 
-Stored models: `Medication`, `DoseEntry`, `SharedPerson`. Firestore paths are scoped by the signed-in Firebase Auth uid (`AuthenticationManager.shared.uid`), not a device ID:
+Stored models: `Medication`, `DoseEntry`, `SharedPerson`, `UserProfile`. Firestore paths are scoped by the signed-in Firebase Auth uid (`AuthenticationManager.shared.uid`), not a device ID:
 - `users/{uid}/medications/{id}`
 - `users/{uid}/doses/{medicationId}` (contains `entries` array)
 - `users/{uid}/sharedPeople/{id}`
+- `users/{uid}` (the profile fields live directly on this document, via `UserProfileStore` — not `MedicationManager`, which only reads it)
 
 ### Privacy & compliance
 

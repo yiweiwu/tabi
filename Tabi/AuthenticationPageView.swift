@@ -13,6 +13,9 @@ struct AuthenticationPageView: View {
     @State private var authError: String?
     @State private var appleSignInCoordinator = AppleSignInCoordinator()
     @State private var showingPrivacyPolicy = false
+    @State private var fullName = ""
+    @State private var email = ""
+    @State private var password = ""
     
     var body: some View {
         ZStack {
@@ -76,9 +79,15 @@ struct AuthenticationPageView: View {
                             HStack {
                                 Image(systemName: "person")
                                     .foregroundColor(.tabiGray)
-                                TextField("Full name", text: .constant(""))
+                                TextField("Full name", text: $fullName)
                                     .textContentType(.name)
                                     .autocapitalization(.words)
+                                    .onChange(of: fullName) { _, newValue in
+                                        let parts = newValue.trimmingCharacters(in: .whitespaces)
+                                            .components(separatedBy: " ")
+                                        coordinator.firstName = parts.first ?? ""
+                                        coordinator.lastName = parts.dropFirst().joined(separator: " ")
+                                    }
                             }
                             .padding()
                             .background(Color.tabiCard)
@@ -98,7 +107,7 @@ struct AuthenticationPageView: View {
                             HStack {
                                 Image(systemName: "envelope")
                                     .foregroundColor(.tabiGray)
-                                TextField("Email address", text: .constant(""))
+                                TextField("Email address", text: $email)
                                     .textContentType(.emailAddress)
                                     .keyboardType(.emailAddress)
                                     .autocapitalization(.none)
@@ -121,7 +130,7 @@ struct AuthenticationPageView: View {
                             HStack {
                                 Image(systemName: "lock")
                                     .foregroundColor(.tabiGray)
-                                SecureField("Password", text: .constant(""))
+                                SecureField("Password", text: $password)
                                     .textContentType(.newPassword)
                                 
                                 Button(action: {
@@ -280,6 +289,8 @@ struct AuthenticationPageView: View {
             Task {
                 do {
                     _ = try await AuthenticationManager.shared.signInWithApple(idTokenString: idTokenString, nonce: nonce, fullName: credential.fullName)
+                    await UserProfileStore.shared.fetchIfNeeded()
+                    prefillNameIfNewAccount(givenName: credential.fullName?.givenName, familyName: credential.fullName?.familyName)
                     isSigningIn = false
                     coordinator.nextPage()
                 } catch {
@@ -301,12 +312,29 @@ struct AuthenticationPageView: View {
         isSigningIn = true
         do {
             _ = try await AuthenticationManager.shared.signInWithGoogle(presenting: presentingViewController)
+            await UserProfileStore.shared.fetchIfNeeded()
+            let profile = GIDSignIn.sharedInstance.currentUser?.profile
+            prefillNameIfNewAccount(givenName: profile?.givenName, familyName: profile?.familyName)
             isSigningIn = false
             coordinator.nextPage()
         } catch {
             isSigningIn = false
             authError = error.localizedDescription
         }
+    }
+
+    // Apple/Google both hand back the account's name on first sign-in - use
+    // it so a brand-new user isn't retyping a name the provider already
+    // gave us. Only applies to new accounts: if fetchIfNeeded() above pulled
+    // down an existing profile (returning user, e.g. reinstalled the app),
+    // firstName is already set and this is skipped so we don't clobber a
+    // name they may have since edited in-app.
+    private func prefillNameIfNewAccount(givenName: String?, familyName: String?) {
+        // Don't clobber a name the user already typed into the "Full name"
+        // field on this page, or one a returning account already has saved.
+        guard coordinator.firstName.isEmpty, UserProfileStore.shared.profile.firstName.isEmpty else { return }
+        if let givenName, !givenName.isEmpty { coordinator.firstName = givenName }
+        if let familyName, !familyName.isEmpty { coordinator.lastName = familyName }
     }
 
     private static func rootViewController() -> UIViewController? {

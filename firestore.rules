@@ -10,6 +10,19 @@ rules_version = '2';
 // enforced below via request.auth.uid == userId - a caller cannot read or
 // write another user's documents even if they know the uid.
 //
+// Document: users/{userId}
+// The user's profile - fields live directly on this document (not a
+// subcollection) since a profile is 1:1 with the user. Populated by
+// OnboardingCoordinator.completeOnboarding() and edited via ProfileView,
+// both through UserProfileStore.
+// Fields (all optional - a doc may exist with only some of these set):
+//   - firstName, lastName, gender, age, height, weight: string
+//   - allergies: list of allergy maps (id, name, type, severity, symptoms, notes)
+//   - pharmacies: list of pharmacy maps (id, name, address, pharmacistName, phoneNumber, notes)
+//   - settings: map (unitSystem, locationPermissionEnabled, countryOfResidence,
+//     emailAddress, faceIDEnabled) - not deeply validated below, same as the
+//     list contents in doses/sharedPeople.
+//
 // Collection: users/{userId}/doses/{medicationId}
 // Document ID: medicationId (UUID string)
 // Fields:
@@ -110,6 +123,41 @@ service cloud.firestore {
              (resource != null && request.resource.data.optInStatus == resource.data.optInStatus);
     }
 
+    // Unlike the doses/sharedPeople list contents (which rules cannot
+    // iterate, per the NOTE above), `settings` is a single map, so its
+    // fields can and should be validated directly.
+    function isValidUserSettings() {
+      return request.resource.data.settings.keys().hasOnly(['unitSystem', 'locationPermissionEnabled', 'countryOfResidence', 'emailAddress', 'faceIDEnabled']) &&
+             (!('unitSystem' in request.resource.data.settings) ||
+              request.resource.data.settings.unitSystem in ['Imperial', 'Metric']) &&
+             (!('locationPermissionEnabled' in request.resource.data.settings) ||
+              request.resource.data.settings.locationPermissionEnabled is bool) &&
+             (!('countryOfResidence' in request.resource.data.settings) ||
+              (request.resource.data.settings.countryOfResidence is string &&
+               request.resource.data.settings.countryOfResidence.size() <= 100)) &&
+             (!('emailAddress' in request.resource.data.settings) ||
+              (request.resource.data.settings.emailAddress is string &&
+               request.resource.data.settings.emailAddress.size() <= 200)) &&
+             (!('faceIDEnabled' in request.resource.data.settings) ||
+              request.resource.data.settings.faceIDEnabled is bool);
+    }
+
+    function isValidUserProfile() {
+      return hasOnlyAllowedFields(['firstName', 'lastName', 'gender', 'age', 'height', 'weight', 'allergies', 'pharmacies', 'settings']) &&
+             isValidOptionalString('firstName', 100) &&
+             isValidOptionalString('lastName', 100) &&
+             isValidOptionalString('gender', 50) &&
+             isValidOptionalString('age', 10) &&
+             isValidOptionalString('height', 10) &&
+             isValidOptionalString('weight', 10) &&
+             (!('allergies' in request.resource.data) ||
+              (request.resource.data.allergies is list && request.resource.data.allergies.size() <= 100)) &&
+             (!('pharmacies' in request.resource.data) ||
+              (request.resource.data.pharmacies is list && request.resource.data.pharmacies.size() <= 100)) &&
+             (!('settings' in request.resource.data) ||
+              (request.resource.data.settings is map && isValidUserSettings()));
+    }
+
     function isValidSharedPerson() {
       return hasOnlyAllowedFields(['id', 'name', 'phoneNumber', 'email', 'dateAdded', 'optInStatus']) &&
              hasRequiredFields(['id', 'name', 'dateAdded']) &&
@@ -153,6 +201,9 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUserProfile();
+
       match /doses/{medicationId} {
         allow read, delete: if isOwner(userId);
         allow create, update: if isOwner(userId) && isValidDosesDoc();

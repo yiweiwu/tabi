@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 import MapKit
 import LocalAuthentication
 import CoreLocation
@@ -8,9 +7,7 @@ import CoreLocation
 
 struct ProfileView: View {
     @ObservedObject var medicationManager: MedicationManager
-    @State private var selectedPhoto: PhotosPickerItem?
-    @State private var profileImage: Image?
-    @State private var profileUIImage: UIImage?
+    @ObservedObject private var profileStore = UserProfileStore.shared
     @State private var showingEditSheet = false
     @State private var showingAllergyProfile = false
     @State private var showingPharmacies = false
@@ -22,57 +19,28 @@ struct ProfileView: View {
                 VStack(spacing: 24) {
                     // Avatar + Name
                     HStack(spacing: 16) {
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Circle()
-                                .fill(Color.tabiLavLight)
-                                .frame(width: 72, height: 72)
-                                .overlay(
-                                    Group {
-                                        if let profileImage {
-                                            profileImage
-                                                .resizable()
-                                                .scaledToFill()
-                                        } else if let imageData = medicationManager.userProfile.profileImageData,
-                                                  let uiImage = UIImage(data: imageData) {
-                                            Image(uiImage: uiImage)
-                                                .resizable()
-                                                .scaledToFill()
-                                        } else {
-                                            Image(systemName: "person.fill")
-                                                .font(.title)
-                                                .foregroundColor(.tabiLavender)
-                                        }
-                                    }
-                                )
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.tabiLavender.opacity(0.3), lineWidth: 2)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .fill(Color.tabiLavender)
-                                        .frame(width: 24, height: 24)
-                                        .overlay(
-                                            Image(systemName: "camera.fill")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(.white)
-                                        )
-                                        .offset(x: 24, y: 24),
-                                    alignment: .center
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        
+                        Circle()
+                            .fill(Color.tabiLavLight)
+                            .frame(width: 72, height: 72)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .font(.title)
+                                    .foregroundColor(.tabiLavender)
+                            )
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.tabiLavender.opacity(0.3), lineWidth: 2)
+                            )
+
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(medicationManager.userProfile.displayName)
+                            Text(profileStore.profile.displayName)
                                 .font(.title2.bold())
-                            Text(medicationManager.userProfile.displayInfo)
+                            Text(profileStore.profile.displayInfo)
                                 .font(.subheadline)
                                 .foregroundColor(.tabiGray)
                         }
                         Spacer()
-                        
+
                         Button {
                             showingEditSheet = true
                         } label: {
@@ -148,26 +116,16 @@ struct ProfileView: View {
             .navigationTitle("Profile")
         }
         .sheet(isPresented: $showingEditSheet) {
-            EditProfileSheet(userProfile: $medicationManager.userProfile)
+            EditProfileSheet(userProfile: $profileStore.profile)
         }
         .sheet(isPresented: $showingAllergyProfile) {
-            AllergyProfileView(userProfile: $medicationManager.userProfile)
+            AllergyProfileView(userProfile: $profileStore.profile)
         }
         .sheet(isPresented: $showingPharmacies) {
-            PharmaciesView(userProfile: $medicationManager.userProfile)
+            PharmaciesView(userProfile: $profileStore.profile)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(medicationManager: medicationManager)
-        }
-        .onChange(of: selectedPhoto) { _, newValue in
-            Task {
-                if let data = try? await newValue?.loadTransferable(type: Data.self),
-                   let uiImage = UIImage(data: data) {
-                    profileUIImage = uiImage
-                    profileImage = Image(uiImage: uiImage)
-                    medicationManager.userProfile.profileImageData = data
-                }
-            }
         }
     }
 }
@@ -798,6 +756,7 @@ extension LocationSearchService: MKLocalSearchCompleterDelegate {
 // MARK: - Settings View
 struct SettingsView: View {
     @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject private var profileStore = UserProfileStore.shared
     @Environment(\.dismiss) private var dismiss
     @StateObject private var locationManager = LocationManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
@@ -816,7 +775,7 @@ struct SettingsView: View {
         NavigationView {
             Form {
                 Section("Preferences") {
-                    Picker("Units", selection: $medicationManager.userProfile.settings.unitSystem) {
+                    Picker("Units", selection: $profileStore.profile.settings.unitSystem) {
                         ForEach(UserSettings.UnitSystem.allCases, id: \.self) { unit in
                             Text(unit.rawValue).tag(unit)
                         }
@@ -839,7 +798,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Picker("Country of Residence", selection: $medicationManager.userProfile.settings.countryOfResidence) {
+                    Picker("Country of Residence", selection: $profileStore.profile.settings.countryOfResidence) {
                         ForEach(countries, id: \.self) { country in
                             Text(country).tag(country)
                         }
@@ -847,25 +806,25 @@ struct SettingsView: View {
                 }
 
                 Section("Account") {
-                    TextField("Email Address", text: $medicationManager.userProfile.settings.emailAddress)
+                    TextField("Email Address", text: $profileStore.profile.settings.emailAddress)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
 
                 Section("Security") {
-                    Toggle("Face ID / Touch ID", isOn: $medicationManager.userProfile.settings.faceIDEnabled)
-                        .onChange(of: medicationManager.userProfile.settings.faceIDEnabled) { _, newValue in
+                    Toggle("Face ID / Touch ID", isOn: $profileStore.profile.settings.faceIDEnabled)
+                        .onChange(of: profileStore.profile.settings.faceIDEnabled) { _, newValue in
                             if newValue {
                                 authenticateWithBiometrics { success in
                                     if !success {
-                                        medicationManager.userProfile.settings.faceIDEnabled = false
+                                        profileStore.profile.settings.faceIDEnabled = false
                                     }
                                 }
                             }
                         }
 
-                    if medicationManager.userProfile.settings.faceIDEnabled {
+                    if profileStore.profile.settings.faceIDEnabled {
                         Text("Biometric authentication is enabled")
                             .font(.caption)
                             .foregroundColor(.secondary)
