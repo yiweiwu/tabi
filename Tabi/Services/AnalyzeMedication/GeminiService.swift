@@ -83,7 +83,11 @@ private extension GeminiService {
         let genericName = extracted["genericName"] as? String ?? ""
         let dosage = extracted["dosage"] as? String ?? ""
         let schedule = extracted["schedule"] as? String ?? ""
-        let frequencyPerDay = extracted["frequencyPerDay"] as? Int ?? 1
+        // Clamped to at least 1: a 0 (or unset) frequency would make
+        // `resolvedTodayCount >= frequencyPerDay` trivially true, so the row
+        // would render as fully taken the instant the medication is added,
+        // before the user ever presses Taken.
+        let frequencyPerDay = max(extracted["frequencyPerDay"] as? Int ?? 1, 1)
         print("✅ Gemini: brand='\(brandName)' generic='\(genericName)' dosage='\(dosage)' freq=\(frequencyPerDay)x/day")
         return DetectedMedicationInfo(
             brandName: brandName,

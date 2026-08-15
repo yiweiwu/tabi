@@ -12,16 +12,40 @@ struct Medication: Identifiable, Codable {
     var scheduleLabel: String  // "Every Day", "Twice Daily", etc.
     var points: Int
     var frequencyPerDay: Int = 1
+    var doseTimeMinutes: [Int] = []  // minutes since midnight, one per dose
     var takenToday: Int = 0
+    var skippedToday: Int = 0
     var lastTaken: Date? = nil
     var streak: Int = 0
     var colorIndex: Int = 0
     var isMuted: Bool = false
 
+    // Falls back to the default schedule when empty or stale (e.g. a
+    // medication saved before per-dose custom times existed, or frequency
+    // was edited without regenerating times yet).
+    var resolvedDoseTimeMinutes: [Int] {
+        doseTimeMinutes.count == frequencyPerDay && !doseTimeMinutes.isEmpty
+            ? doseTimeMinutes
+            : MedicationScheduleParser.defaultDoseTimeMinutes(for: frequencyPerDay)
+    }
+
+    var todaysScheduledTimes: [Date] { MedicationScheduleParser.times(for: resolvedDoseTimeMinutes) }
+
     var takenTodayCount: Int {
         guard let lastTaken, Calendar.current.isDateInToday(lastTaken) else { return 0 }
         return takenToday
     }
+
+    // Doses skipped today - kept separate from takenTodayCount so a skip
+    // never displays or counts as if the user actually took the dose.
+    var skippedTodayCount: Int {
+        guard let lastTaken, Calendar.current.isDateInToday(lastTaken) else { return 0 }
+        return skippedToday
+    }
+
+    // Doses that no longer need action today (taken or skipped) - used to
+    // advance past a resolved time slot without claiming it was taken.
+    var resolvedTodayCount: Int { takenTodayCount + skippedTodayCount }
 
     var isOverdue: Bool {
         guard let lastTaken else { return true }
@@ -31,8 +55,8 @@ struct Medication: Identifiable, Codable {
     var pillColor: Color { pillColors[colorIndex % pillColors.count] }
 
     var timeWithCountdown: String {
-        let times = MedicationScheduleParser.scheduledTimes(for: frequencyPerDay)
-        let next = takenTodayCount < times.count ? times[takenTodayCount] : times.first!
+        let times = todaysScheduledTimes
+        let next = resolvedTodayCount < times.count ? times[resolvedTodayCount] : times.first!
         let f = DateFormatter(); f.timeStyle = .short
         let t = f.string(from: next)
         let diff = next.timeIntervalSinceNow

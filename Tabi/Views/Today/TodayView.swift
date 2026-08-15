@@ -7,6 +7,7 @@ struct TodayView: View {
     @State private var showingCamera = false
     @State private var isEditing = false
     @State private var selectedDate = Date()
+    @State private var editingMedication: Medication?
 
     private var isSelectedToday: Bool { Calendar.current.isDateInToday(selectedDate) }
 
@@ -66,7 +67,9 @@ struct TodayView: View {
                                     }
                                     TABIMedicationRow(
                                         medication: med,
-                                        onTake: { medicationManager.recordMedicationTaken(med, points: med.points) }
+                                        onTake: { medicationManager.recordMedicationTaken(med, points: med.points) },
+                                        onSkip: { medicationManager.recordMedicationSkipped(med) },
+                                        onEdit: { editingMedication = med }
                                     )
                                 }
                                 .animation(.easeInOut(duration: 0.2), value: isEditing)
@@ -113,18 +116,6 @@ struct TodayView: View {
                     .padding(.horizontal, 16)
                 }
 
-                // ── Drug Interaction ──────────────────────────────────
-                HStack(spacing: 12) {
-                    Circle().fill(Color.tabiLavLight).frame(width: 40, height: 40)
-                        .overlay(Image(systemName: "exclamationmark.triangle").font(.caption).foregroundColor(.tabiLavender))
-                    Text("Drug Interaction").font(.subheadline).foregroundColor(.primary)
-                    Spacer()
-                    Text("😊").font(.title2)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 14)
-                .background(Color.tabiCard).cornerRadius(14)
-                .padding(.horizontal, 16).padding(.top, 14)
-
                 // ── Upcoming Refills ──────────────────────────────────
                 HStack(spacing: 12) {
                     Circle().fill(Color.tabiLavLight).frame(width: 40, height: 40)
@@ -134,7 +125,7 @@ struct TodayView: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 14)
                 .background(Color.tabiCard).cornerRadius(14)
-                .padding(.horizontal, 16).padding(.top, 8)
+                .padding(.horizontal, 16).padding(.top, 14)
 
                 Spacer().frame(height: 32)
             }
@@ -142,6 +133,9 @@ struct TodayView: View {
         .background(Color.tabiBG)
         .fullScreenCover(isPresented: $showingCamera) {
             NewMedicationCameraView(medicationManager: medicationManager, isPresented: $showingCamera)
+        }
+        .sheet(item: $editingMedication) { med in
+            EditMedicationView(medication: med, medicationManager: medicationManager)
         }
     }
 }
@@ -151,13 +145,12 @@ struct TodayView: View {
 struct WeekStripHeader: View {
     @Binding var selectedDate: Date
     private let cal = Calendar.current
-    private let letters = ["S","M","T","W","T","F","S"]
+    private let daysBefore = 60
+    private let daysAfter = 60
 
-    var weekDates: [Date] {
-        let today = Date()
-        let wd = cal.component(.weekday, from: today)
-        let start = cal.date(byAdding: .day, value: -(wd - 1), to: cal.startOfDay(for: today)) ?? today
-        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
+    private var dateRange: [Date] {
+        let today = cal.startOfDay(for: Date())
+        return (-daysBefore...daysAfter).compactMap { cal.date(byAdding: .day, value: $0, to: today) }
     }
 
     var body: some View {
@@ -165,31 +158,44 @@ struct WeekStripHeader: View {
             Text(headerTitle)
                 .font(.title2).fontWeight(.bold).foregroundColor(.primary)
 
-            HStack(spacing: 0) {
-                ForEach(Array(weekDates.enumerated()), id: \.offset) { i, date in
-                    let isToday = cal.isDateInToday(date)
-                    let isSelected = cal.isDate(date, inSameDayAs: selectedDate)
-                    let day = cal.component(.day, from: date)
-                    Button(action: { selectedDate = date }) {
-                        VStack(spacing: 4) {
-                            Text(letters[i])
-                                .font(.caption2)
-                                .foregroundColor(isSelected ? .tabiOrange : (isToday ? .primary : .tabiGray))
-                            ZStack {
-                                Circle()
-                                    .fill(isSelected ? Color.tabiOrange : (isToday ? Color.primary : Color.clear))
-                                    .frame(width: 28, height: 28)
-                                Text("\(day)")
-                                    .font(.system(size: 13, weight: (isSelected || isToday) ? .bold : .regular))
-                                    .foregroundColor((isSelected || isToday) ? .white : .tabiGray)
-                            }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(dateRange, id: \.self) { date in
+                            dayCell(for: date)
+                                .id(date)
                         }
-                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.plain)
+                }
+                .onAppear {
+                    proxy.scrollTo(cal.startOfDay(for: selectedDate), anchor: .center)
                 }
             }
         }
+    }
+
+    private func dayCell(for date: Date) -> some View {
+        let isToday = cal.isDateInToday(date)
+        let isSelected = cal.isDate(date, inSameDayAs: selectedDate)
+        let day = cal.component(.day, from: date)
+        let weekdayLetter = String(cal.shortWeekdaySymbols[cal.component(.weekday, from: date) - 1].prefix(1))
+        return Button(action: { selectedDate = date }) {
+            VStack(spacing: 4) {
+                Text(weekdayLetter)
+                    .font(.caption2)
+                    .foregroundColor(isSelected ? .tabiOrange : (isToday ? .primary : .tabiGray))
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? Color.tabiOrange : (isToday ? Color.primary : Color.clear))
+                        .frame(width: 28, height: 28)
+                    Text("\(day)")
+                        .font(.system(size: 13, weight: (isSelected || isToday) ? .bold : .regular))
+                        .foregroundColor((isSelected || isToday) ? .white : .tabiGray)
+                }
+            }
+            .frame(width: 32)
+        }
+        .buttonStyle(.plain)
     }
 
     private var headerTitle: String {
@@ -216,34 +222,45 @@ struct WeekStripHeader: View {
 struct TABIMedicationRow: View {
     let medication: Medication
     let onTake: () -> Void
+    let onSkip: () -> Void
+    let onEdit: () -> Void
 
-    private enum TakenButtonState { case notStarted, inProgress, overdue, completed }
+    // `.completed` = every dose today was actually taken (green, celebratory).
+    // `.resolvedBySkip` = nothing left to act on, but at least one dose was
+    // skipped rather than taken - kept visually distinct so a skip never
+    // reads as "taken".
+    private enum TakenButtonState { case notStarted, inProgress, overdue, completed, resolvedBySkip }
 
     private var takenButtonState: TakenButtonState {
         let taken = medication.takenTodayCount
+        let resolved = medication.resolvedTodayCount
         let total = medication.frequencyPerDay
-        if taken >= total { return .completed }
-        let passed = MedicationScheduleParser.scheduledTimes(for: total).filter { $0 < Date() }.count
-        if passed > taken { return .overdue }
+        if resolved >= total { return taken >= total ? .completed : .resolvedBySkip }
+        let passed = medication.todaysScheduledTimes.filter { $0 < Date() }.count
+        if passed > resolved { return .overdue }
         if taken > 0 { return .inProgress }
         return .notStarted
     }
 
+    private var isFullyResolved: Bool { medication.resolvedTodayCount >= medication.frequencyPerDay }
+
     private func buttonBackground(for state: TakenButtonState) -> Color {
         switch state {
-        case .completed:  return Color.tabiGreen.opacity(0.15)
-        case .inProgress: return Color.tabiAmber.opacity(0.15)
-        case .overdue:    return Color.tabiRed.opacity(0.15)
-        case .notStarted: return Color(UIColor.systemGray5)
+        case .completed:      return Color.tabiGreen.opacity(0.15)
+        case .inProgress:     return Color.tabiAmber.opacity(0.15)
+        case .overdue:        return Color.tabiRed.opacity(0.15)
+        case .notStarted:     return Color(UIColor.systemGray5)
+        case .resolvedBySkip: return Color(UIColor.systemGray5)
         }
     }
 
     private func buttonForeground(for state: TakenButtonState) -> Color {
         switch state {
-        case .completed:  return .tabiGreen
-        case .inProgress: return .tabiAmber
-        case .overdue:    return .tabiRed
-        case .notStarted: return .tabiGray
+        case .completed:      return .tabiGreen
+        case .inProgress:     return .tabiAmber
+        case .overdue:        return .tabiRed
+        case .notStarted:     return .tabiGray
+        case .resolvedBySkip: return .tabiGray
         }
     }
 
@@ -277,6 +294,15 @@ struct TABIMedicationRow: View {
             Spacer()
 
             let state = takenButtonState
+            Button(action: onSkip) {
+                Text("Skip").font(.caption.bold())
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Color(UIColor.systemGray5))
+                    .foregroundColor(.tabiGray)
+                    .cornerRadius(8)
+            }
+            .disabled(isFullyResolved)
+
             Button(action: onTake) {
                 HStack(spacing: 3) {
                     Image(systemName: "checkmark").font(.caption2.bold())
@@ -287,12 +313,16 @@ struct TABIMedicationRow: View {
                 .foregroundColor(buttonForeground(for: state))
                 .cornerRadius(8)
             }
-            .disabled(state == .completed)
+            .disabled(isFullyResolved)
 
-            Image(systemName: "chevron.right").font(.caption).foregroundColor(.tabiGray)
+            Button(action: onEdit) {
+                Image(systemName: "chevron.right").font(.caption).foregroundColor(.tabiGray)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(Color.tabiCard)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onEdit)
     }
 }
 

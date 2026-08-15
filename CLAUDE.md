@@ -140,13 +140,11 @@ These invariants must be preserved across any UI change.
 - `medication.frequencyPerDay` — total doses scheduled per day, set from Gemini OCR at scan time.
 
 ### Mid-day medication add
-When a new medication is added mid-day, doses whose scheduled time has already passed are pre-seeded as taken:
-```swift
-let times = MedicationScheduleParser.scheduledTimes(for: frequencyPerDay)
-let passedCount = times.filter { $0 < Date() }.count
-// takenToday: passedCount, lastTaken: passedCount > 0 ? Date() : nil
-```
-**Example**: twice-daily (8am, 8pm) added at 2pm → `passedCount = 1` (only 8am passed). `takenTodayCount = 1`, so 8pm still shows as remaining.
+When a new medication is added mid-day, doses whose scheduled time has already passed are **not** pre-seeded as taken — a dose only becomes `.taken` when the user actually taps Taken. `Medication` is created with `takenToday: 0, lastTaken: nil` regardless of how many scheduled times already passed; the row's `takenButtonState` (`Views/Today/TodayView.swift`) already shows those as `.overdue` (red) rather than `.notStarted`.
+
+For the Calendar view's per-day `DoseEntry` list (`DoseSchedule.buildEntries()` in `Models/DoseModels.swift`), times that already passed on the add day are seeded as `.skipped` rather than `.upcoming` — leaving them `.upcoming` would let the missed-dose check flip them to `.missed` and fire a caretaker SMS alert for a dose that predates when the medication was even added. `.skipped` avoids that false alert while still not showing as `.taken`.
+
+**Example**: twice-daily (8am, 8pm) added at 2pm → 8am shows as overdue (not taken) on the Today row, and as skipped (not taken, no alert) on the Calendar; 8pm still shows as upcoming/remaining.
 
 ### Display rules (Today view and Calendar view must agree)
 | State | Today view | Calendar bar |

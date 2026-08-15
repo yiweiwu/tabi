@@ -25,13 +25,7 @@ struct MedicationProgressView: View {
                             .font(.headline)
                             .padding(.horizontal)
 
-                        WeeklyProgressView()
-
-                        Text("Perfect week so far! 🎉")
-                            .font(.subheadline)
-                            .foregroundColor(.green)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal)
+                        WeeklyProgressView(medicationManager: medicationManager)
                     }
                 }
             }
@@ -84,26 +78,66 @@ struct AchievementRow: View {
 // MARK: - Weekly Progress View
 
 struct WeeklyProgressView: View {
-    let days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+    @ObservedObject var medicationManager: MedicationManager
+    private let cal = Calendar.current
+    private let dayLabels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+    private var weekDays: [Date] {
+        let today = cal.startOfDay(for: Date())
+        let daysSinceMonday = (cal.component(.weekday, from: today) + 5) % 7
+        let monday = cal.date(byAdding: .day, value: -daysSinceMonday, to: today) ?? today
+        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: monday) }
+    }
+
+    // A day counts as "perfect" only if every medication active that day
+    // has every one of its DoseEntry records for that day actually marked
+    // `.taken` - never inferred just because the day has passed.
+    private func isPerfectDay(_ day: Date) -> Bool {
+        let entriesByMed = medicationManager.medications.map { med in
+            CalendarPersistenceManager.shared.loadAll(forMedicationId: med.id)
+                .filter { cal.isDate($0.scheduledDate, inSameDayAs: day) }
+        }
+        let activeEntries = entriesByMed.filter { !$0.isEmpty }
+        guard !activeEntries.isEmpty else { return false }
+        return activeEntries.allSatisfy { entries in
+            entries.allSatisfy { if case .taken = $0.status { return true }; return false }
+        }
+    }
+
+    private var todayStart: Date { cal.startOfDay(for: Date()) }
+
+    private var isPerfectWeekSoFar: Bool {
+        weekDays.filter { $0 <= todayStart }.allSatisfy { isPerfectDay($0) }
+    }
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(Array(days.enumerated()), id: \.offset) { index, day in
-                VStack {
-                    Text(day)
-                        .font(.caption2)
-                        .foregroundColor(.white)
-
-                    if index < 6 {
-                        Text("✓")
-                            .font(.caption)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                ForEach(Array(weekDays.enumerated()), id: \.offset) { index, day in
+                    let isFuture = day > todayStart
+                    let perfect = !isFuture && isPerfectDay(day)
+                    VStack {
+                        Text(dayLabels[index])
+                            .font(.caption2)
                             .foregroundColor(.white)
+                        if !isFuture {
+                            Text(perfect ? "✓" : "–")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(isFuture ? Color(UIColor.systemGray4) : (perfect ? Color.tabiGreen : Color.tabiRed))
+                    .cornerRadius(8)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(index < 6 ? Color.green : Color.yellow)
-                .cornerRadius(8)
+            }
+
+            if isPerfectWeekSoFar {
+                Text("Perfect week so far! 🎉")
+                    .font(.subheadline)
+                    .foregroundColor(.green)
+                    .fontWeight(.semibold)
             }
         }
         .padding(.horizontal)

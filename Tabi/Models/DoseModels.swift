@@ -91,11 +91,12 @@ struct DoseSchedule {
     let startDate: Date
     let endDate: Date
 
-    // Times that already passed on the add day are seeded as `.taken`,
-    // mirroring the Medication.takenToday pre-seed in
-    // NewMedicationCameraView - otherwise the missed-dose check would fire
-    // a caretaker alert for a dose that predates when the medication was
-    // even added.
+    // Times that already passed on the add day are seeded as `.skipped`
+    // (not `.taken` - the user never actually took them, only the
+    // scheduled time predates when the medication was added) and not left
+    // `.upcoming` either, since the missed-dose check would otherwise flip
+    // them to `.missed` and fire a caretaker alert for a dose that predates
+    // when the medication was even added.
     func buildEntries() -> [DoseEntry] {
         let cal = Calendar.current
         let addDay = cal.startOfDay(for: startDate)
@@ -107,7 +108,7 @@ struct DoseSchedule {
                 let c = cal.dateComponents([.hour, .minute], from: t)
                 guard let d = cal.date(bySettingHour: c.hour ?? 9, minute: c.minute ?? 0, second: 0, of: current) else { continue }
                 let alreadyPassedOnAddDay = current == addDay && d < startDate
-                let status: DoseStatus = alreadyPassedOnAddDay ? .taken(startDate) : .upcoming
+                let status: DoseStatus = alreadyPassedOnAddDay ? .skipped(startDate) : .upcoming
                 entries.append(DoseEntry(medicationId: medicationId, medicationName: medicationName, dosage: dosage, scheduledDate: d, status: status))
             }
             current = cal.date(byAdding: .day, value: 1, to: current) ?? current

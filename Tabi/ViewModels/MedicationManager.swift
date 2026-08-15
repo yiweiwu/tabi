@@ -46,6 +46,17 @@ class MedicationManager: ObservableObject {
         saveMedications()
     }
 
+    // Persists an edited medication (name, dosage, frequency, dose times)
+    // and regenerates its upcoming schedule/notifications so the new times
+    // take effect immediately - past/resolved DoseEntry records are left
+    // untouched (see CalendarPersistenceManager.save(schedule:)).
+    func update(_ medication: Medication) {
+        save(medication)
+        let schedule = MedicationScheduleParser.schedule(for: medication, dosage: medication.dosage)
+        CalendarPersistenceManager.shared.save(schedule: schedule)
+        NotificationScheduler.shared.schedule(for: schedule)
+    }
+
     func startMissedDoseMonitoring() {
         CalendarPersistenceManager.shared.startMonitoring { [weak self] in self?.medications ?? [] }
     }
@@ -64,14 +75,14 @@ class MedicationManager: ObservableObject {
         guard let i = medications.firstIndex(where: { $0.id == medication.id }) else { return }
         var med = medications[i]
         let isNewDay = med.lastTaken.map { !Calendar.current.isDateInToday($0) } ?? true
-        if isNewDay { med.takenToday = 0 }
+        if isNewDay { med.takenToday = 0; med.skippedToday = 0 }
         med.takenToday += 1
         med.lastTaken = Date()
         med.streak += 1
         medications[i] = med
         save(med)
 
-        if med.takenToday >= med.frequencyPerDay {
+        if med.resolvedTodayCount >= med.frequencyPerDay {
             NotificationScheduler.shared.cancelRemainingToday(for: medication.id)
         } else {
             NotificationScheduler.shared.cancelNext(for: medication.id)
@@ -80,6 +91,55 @@ class MedicationManager: ObservableObject {
         gameStats.totalPoints += points
         gameStats.currentStreak = medications.allSatisfy { !$0.isOverdue } ? gameStats.currentStreak + 1 : 0
         gameStats.level = gameStats.calculatedLevel
+
+        markTodaysDoseTaken(for: med)
+    }
+
+    // Marks the earliest still-`.upcoming` DoseEntry for today as `.taken`
+    // so the Calendar and Progress views actually reflect a real Taken tap,
+    // instead of the entry silently staying `.upcoming` (or later flipping
+    // to `.missed`) despite the user having taken the dose.
+    private func markTodaysDoseTaken(for medication: Medication) {
+        let todaysUpcoming = CalendarPersistenceManager.shared.loadAll(forMedicationId: medication.id)
+            .filter { Calendar.current.isDateInToday($0.scheduledDate) }
+            .sorted { $0.scheduledDate < $1.scheduledDate }
+            .first { if case .upcoming = $0.status { return true }; return false }
+        guard let entry = todaysUpcoming else { return }
+        CalendarPersistenceManager.shared.updateStatus(entryId: entry.id, medicationId: medication.id, status: .taken(Date()))
+    }
+
+    func recordMedicationSkipped(_ medication: Medication) {
+        guard let i = medications.firstIndex(where: { $0.id == medication.id }) else { return }
+        var med = medications[i]
+        let isNewDay = med.lastTaken.map { !Calendar.current.isDateInToday($0) } ?? true
+        if isNewDay { med.takenToday = 0; med.skippedToday = 0 }
+        med.skippedToday += 1
+        med.lastTaken = Date()
+        med.streak = 0
+        medications[i] = med
+        save(med)
+
+        if med.resolvedTodayCount >= med.frequencyPerDay {
+            NotificationScheduler.shared.cancelRemainingToday(for: medication.id)
+        } else {
+            NotificationScheduler.shared.cancelNext(for: medication.id)
+        }
+
+        gameStats.currentStreak = 0
+
+        markTodaysDoseSkipped(for: med)
+    }
+
+    // Marks the earliest still-`.upcoming` DoseEntry for today as `.skipped`
+    // so the Calendar view reflects the skip and the missed-dose checker
+    // doesn't later flip it to `.missed` and fire a false caretaker alert.
+    private func markTodaysDoseSkipped(for medication: Medication) {
+        let todaysUpcoming = CalendarPersistenceManager.shared.loadAll(forMedicationId: medication.id)
+            .filter { Calendar.current.isDateInToday($0.scheduledDate) }
+            .sorted { $0.scheduledDate < $1.scheduledDate }
+            .first { if case .upcoming = $0.status { return true }; return false }
+        guard let entry = todaysUpcoming else { return }
+        CalendarPersistenceManager.shared.updateStatus(entryId: entry.id, medicationId: medication.id, status: .skipped(Date()))
     }
 
     // Clears everything stored on-device. Firestore-backed data (doses,
