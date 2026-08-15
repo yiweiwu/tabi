@@ -37,9 +37,18 @@ final class UserProfileStore: ObservableObject {
     func fetchIfNeeded() async {
         guard !hasFetched, let uid = AuthenticationManager.shared.uid else { return }
         hasFetched = true
-        guard let snapshot = try? await Firestore.firestore().collection("users").document(uid).getDocument(),
-              let data = snapshot.data(),
-              let decoded = UserProfile.decoded(from: data) else { return }
+        let snapshot: DocumentSnapshot
+        do {
+            snapshot = try await Firestore.firestore().collection("users").document(uid).getDocument()
+        } catch {
+            print("UserProfileStore: failed to fetch profile - \(error.localizedDescription)")
+            return
+        }
+        guard let data = snapshot.data() else { return }
+        guard let decoded = UserProfile.decoded(from: data) else {
+            print("UserProfileStore: failed to decode profile document")
+            return
+        }
         await MainActor.run {
             self.isApplyingFetch = true
             self.profile = decoded
@@ -58,6 +67,10 @@ final class UserProfileStore: ObservableObject {
 
     private func persist(_ profile: UserProfile) {
         guard let uid = AuthenticationManager.shared.uid, let dict = profile.firestoreDict() else { return }
-        Firestore.firestore().collection("users").document(uid).setData(dict, merge: true)
+        Firestore.firestore().collection("users").document(uid).setData(dict, merge: true) { error in
+            if let error {
+                print("UserProfileStore: failed to save profile - \(error.localizedDescription)")
+            }
+        }
     }
 }
