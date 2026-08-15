@@ -31,7 +31,8 @@ Tabi/
 ├── DesignSystem.swift         — Color extensions + pillColors constant
 ├── Models/
 │   ├── Medication.swift       — Medication, GameStats, Achievement
-│   └── DoseModels.swift       — DoseStatus, DoseEntry, DoseSchedule, DetectedMedicationInfo
+│   ├── DoseModels.swift       — DoseStatus, DoseEntry, DoseSchedule, DetectedMedicationInfo
+│   └── MedicationTimelineModels.swift — ScheduledMedication, Weekday, DoseDotStatus (mock data backing the Calendar tab's week/month view — not wired to MedicationManager/Firestore yet)
 ├── ViewModels/
 │   ├── MedicationManager.swift
 │   └── CalendarViewModel.swift
@@ -47,7 +48,8 @@ Tabi/
 │   ├── NotificationScheduler.swift
 │   ├── MissedDoseAlertService.swift — fans out a missed-dose SMS alert doc per caretaker to Firestore
 │   ├── ConnectionConfirmationService.swift — writes a caretaker-added SMS confirmation doc to Firestore
-│   └── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
+│   ├── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
+│   └── MedicationTimelineProvider.swift — `MedicationTimelineProviding` protocol + `MockMedicationTimelineProvider`; the seam to swap in a real backend for the Calendar tab later
 └── Views/
     ├── Today/    — TodayView, WeekStripHeader, TABIMedicationRow
     ├── Calendar/ — CalendarView + calendar subcomponents

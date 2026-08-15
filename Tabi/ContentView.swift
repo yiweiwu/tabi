@@ -16,7 +16,7 @@ struct ContentView: View {
                 .tabItem { Label("Sharing", systemImage: "person.2") }
                 .tag(1)
 
-            CalendarView(medicationManager: medicationManager)
+            CalendarView()
                 .tabItem { Label("Calendar", systemImage: "calendar") }
                 .tag(2)
 
