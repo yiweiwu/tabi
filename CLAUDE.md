@@ -65,7 +65,7 @@ Tabi/
 - New ObservableObject that drives a screen → `ViewModels/`
 - Design tokens (colors, spacing) → `DesignSystem.swift`
 
-Firestore data-model conventions (which fields to store, stored models/paths, Firestore-specific gotchas) live in `Services/CLAUDE.md`, scoped to load only when that area of the code is touched.
+Firestore data-model conventions (which fields to store, stored models/paths, Firestore-specific gotchas) live in `.claude/rules/firestore.md`, path-scoped to load only when Firestore-touching files are read.
 
 ## Architecture Patterns
 
@@ -110,7 +110,7 @@ When adding a new test image, place it in the project root alongside existing im
 - **SwiftUI views**: Keep `body` focused. Extract sub-views as separate structs in the same file if they are only used there, or in a new file in the same directory if reused.
 - **Imports**: Only import what the file actually uses. Most view files only need `import SwiftUI`. Camera files need `import AVFoundation`. Analyzer needs `import Vision`.
 - **Concurrency**: Camera and Vision callbacks use completion handlers. Always dispatch UI updates to `DispatchQueue.main.async`.
-- **Error handling**: Never silently swallow an error — no bare `try?`, no fire-and-forget completion handler that ignores its `error` parameter, no empty `catch {}`. At minimum `print()` it. A swallowed error can be indistinguishable from a normal empty result, hiding real bugs (see `Services/CLAUDE.md` for a concrete case).
+- **Error handling**: Never silently swallow an error — no bare `try?`, no fire-and-forget completion handler that ignores its `error` parameter, no empty `catch {}`. At minimum `print()` it. A swallowed error can be indistinguishable from a normal empty result, hiding real bugs (see `.claude/rules/firestore.md` for a concrete case).
 - **Avoid**: Global state beyond the declared singletons. Don't create new singletons without a clear lifecycle reason.
 - **Formatting**: Match the surrounding file's style. No auto-formatting passes that reformat unrelated code.
 
@@ -169,4 +169,4 @@ let passedCount = times.filter { $0 < Date() }.count
 - `GoogleService-Info.plist` is gitignored — never commit it. Obtain it from a teammate.
 - `PRODUCT_BUNDLE_IDENTIFIER` (the `Tabi` target's build setting) must match `GoogleService-Info.plist`'s `BUNDLE_ID`. Because the plist is gitignored, a mismatch never shows up in a PR diff — a "Verify GoogleService-Info.plist bundle ID" build phase checks this on every build and fails loudly if they diverge. If you change the bundle ID, re-download the plist from the Firebase console for that bundle ID.
 - All outbound SMS goes through `sendSms()` in `functions/index.js`, which appends the AWS toll-free/10DLC-required "Reply STOP to unsubscribe, HELP for help." footer to every message. Don't add that language at a call site (client or function) — it's enforced once, centrally, so it can't be dropped by a future caller.
-- Firestore-specific conventions and gotchas live in `Tabi/Services/CLAUDE.md`, not here.
+- Firestore-specific conventions and gotchas live in `.claude/rules/firestore.md` (path-scoped), not here.

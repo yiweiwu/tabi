@@ -1,6 +1,12 @@
-# CLAUDE.md — Tabi/Services
+---
+paths:
+  - "Tabi/Services/**"
+  - "Tabi/ViewModels/MedicationManager.swift"
+  - "firestore.rules"
+  - "firestore.indexes.json"
+---
 
-Firestore-specific conventions for this directory. Loads automatically when working in `Services/` (or `ViewModels/MedicationManager.swift`, which reads Firestore-backed state) so the root `CLAUDE.md` doesn't have to carry this for every unrelated task. `firestore.rules` itself lives at the repo root but is governed by these same conventions.
+# Firestore Conventions
 
 ## Firestore Data Rules
 
