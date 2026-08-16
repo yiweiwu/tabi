@@ -76,6 +76,14 @@ This root file only carries genuinely project-wide context. Feature-specific con
 
 ## Architecture Patterns
 
+### Data ownership
+
+Most persistent app data should follow one pattern: a singleton `ObservableObject` (`MedicationManager`, `UserProfileStore`) holds an in-memory cache that's the single source of truth, backed 1:1 by Firestore under `users/{uid}` (see `.claude/rules/firestore.md`). Local `@State` should only ever be a short-lived edit buffer for the screen it's declared on, committed immediately or on an explicit "Save" — never a buffer that spans multiple screens or a multi-step flow and only syncs at the very end. Backgrounding or killing the app mid-flow silently loses anything not yet synced; see the profile bullet under State management below for two real bugs this caused.
+
+This migration isn't finished everywhere — don't treat these gaps as license to add more local-only state, they're things to close, not to copy:
+- `CalendarView` manages its own local state directly; `CalendarViewModel` exists but is unused.
+- The Calendar tab's week/month view is still backed by `MockMedicationTimelineProvider`'s mock data (`MedicationTimelineProvider.swift`), not real Firestore-backed data.
+
 ### Singletons
 `CameraManager`, `GeminiService`, `NotificationScheduler`, and the Firestore-backed services are deliberate singletons — don't add a new one without a clear lifecycle reason. Rationale for each lives in its feature's scoped rule.
 
@@ -83,6 +91,7 @@ This root file only carries genuinely project-wide context. Feature-specific con
 - `MedicationManager` is the source of truth for medications and game stats, passed down as `@ObservedObject`. Backed by Firestore — use `add(_:)` to add medications, never append directly to `medications`.
 - `CalendarViewModel` exists but is currently unused — `CalendarView` manages its own state directly.
 - Prefer `@ObservedObject` over re-creating ViewModels to avoid state loss
+- User profile data's one home is `UserProfileStore.shared.profile`, per the Data ownership rule above — see `.claude/rules/firestore.md` for the specifics and the real bugs this caused.
 
 ### Design system
 Always use the semantic colors from `DesignSystem.swift`:

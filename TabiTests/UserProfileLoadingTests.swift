@@ -87,14 +87,14 @@ struct UserProfileLoadingTests {
         original.lastName = "Lovelace"
         original.gender = "Woman"
         original.age = "36"
-        original.settings.emailAddress = "ada@example.com"
+        original.settings.countryOfResidence = "Canada"
 
         let dict = try #require(original.firestoreDict())
         let decoded = try #require(UserProfile.decoded(from: dict))
 
         #expect(decoded.displayName == original.displayName)
         #expect(decoded.displayInfo == original.displayInfo)
-        #expect(decoded.settings.emailAddress == original.settings.emailAddress)
+        #expect(decoded.settings.countryOfResidence == original.settings.countryOfResidence)
     }
 
     @Test("An existing Firestore doc predating a newer field still decodes, using that field's default")
@@ -120,7 +120,7 @@ struct UserProfileLoadingTests {
         )
         #expect(decoded.displayName == "Ada Lovelace")
         #expect(decoded.settings.unitSystem == UserSettings().unitSystem)
-        #expect(decoded.settings.emailAddress == UserSettings().emailAddress)
+        #expect(decoded.settings.countryOfResidence == UserSettings().countryOfResidence)
     }
 
     @Test("A malformed Firestore doc fails decode rather than producing garbage data")

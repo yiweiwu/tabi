@@ -53,9 +53,7 @@ struct UserProfile: Codable {
 
 struct UserSettings: Codable {
     var unitSystem: UnitSystem = .imperial
-    var locationPermissionEnabled: Bool = false
     var countryOfResidence: String = "United States"
-    var emailAddress: String = ""
     var faceIDEnabled: Bool = false
 
     init() {}
@@ -66,9 +64,7 @@ struct UserSettings: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         unitSystem = try container.decodeIfPresent(UnitSystem.self, forKey: .unitSystem) ?? .imperial
-        locationPermissionEnabled = try container.decodeIfPresent(Bool.self, forKey: .locationPermissionEnabled) ?? false
         countryOfResidence = try container.decodeIfPresent(String.self, forKey: .countryOfResidence) ?? "United States"
-        emailAddress = try container.decodeIfPresent(String.self, forKey: .emailAddress) ?? ""
         faceIDEnabled = try container.decodeIfPresent(Bool.self, forKey: .faceIDEnabled) ?? false
     }
 
