@@ -1,6 +1,23 @@
 import Foundation
 import FirebaseFirestore
 
+// MARK: - User Profile Remote Store
+
+// The Firestore boundary for reading a profile document, pulled out as a
+// protocol so UserProfileStore's fetch-and-apply logic can run against a
+// fake in unit tests. `FirestoreUserProfileRemoteStore` is the only
+// conformance the app itself uses - production still always talks to real
+// Firestore, this just gives tests a seam to substitute at.
+protocol UserProfileRemoteStore {
+    func fetchProfileDocument(uid: String) async throws -> [String: Any]?
+}
+
+struct FirestoreUserProfileRemoteStore: UserProfileRemoteStore {
+    func fetchProfileDocument(uid: String) async throws -> [String: Any]? {
+        try await Firestore.firestore().collection("users").document(uid).getDocument().data()
+    }
+}
+
 // MARK: - User Profile Store
 
 // Single owner of profile state: an in-memory cache backed by Firestore.
@@ -25,8 +42,31 @@ final class UserProfileStore: ObservableObject {
 
     private var hasFetched = false
     private var isApplyingFetch = false
+    private let remoteStore: UserProfileRemoteStore
 
-    private init() {}
+    // Not private: `.shared` is still the only instance the app itself
+    // constructs (always with the real Firestore-backed remoteStore), but
+    // tests need to build their own isolated instance with a fake one.
+    init(remoteStore: UserProfileRemoteStore = FirestoreUserProfileRemoteStore()) {
+        self.remoteStore = remoteStore
+    }
+
+    // What fetchIfNeeded should do, given its two inputs, kept as a pure
+    // decision separate from the Firestore I/O in fetchIfNeeded() below -
+    // that I/O can't run in a unit test (no FirebaseApp configured in
+    // TabiTests), but the branching that decides whether it *should* run
+    // can be reasoned about and tested on its own.
+    enum FetchDecision: Equatable {
+        case skipAlreadyFetched
+        case skipNoSignedInUser
+        case fetch(uid: String)
+    }
+
+    static func decideFetch(hasFetched: Bool, uid: String?) -> FetchDecision {
+        guard !hasFetched else { return .skipAlreadyFetched }
+        guard let uid else { return .skipNoSignedInUser }
+        return .fetch(uid: uid)
+    }
 
     // One-shot fetch into the in-memory cache. Guarded by `hasFetched` so
     // later calls (e.g. every onboarding page transition) don't re-hit
@@ -35,16 +75,29 @@ final class UserProfileStore: ObservableObject {
     // anonymous/device-ID fallback" pattern already used by
     // CalendarPersistenceManager for doses.
     func fetchIfNeeded() async {
-        guard !hasFetched, let uid = AuthenticationManager.shared.uid else { return }
-        hasFetched = true
-        let snapshot: DocumentSnapshot
+        switch Self.decideFetch(hasFetched: hasFetched, uid: AuthenticationManager.shared.uid) {
+        case .skipAlreadyFetched:
+            return
+        case .skipNoSignedInUser:
+            print("UserProfileStore: skipping fetch - no signed-in user")
+        case .fetch(let uid):
+            hasFetched = true
+            await performFetch(uid: uid)
+        }
+    }
+
+    // Not private: exercised directly in UserProfileLoadingTests against a
+    // fake remoteStore, bypassing fetchIfNeeded()'s AuthenticationManager.uid
+    // lookup (which needs live Firebase and can't run in a unit test).
+    func performFetch(uid: String) async {
+        let data: [String: Any]?
         do {
-            snapshot = try await Firestore.firestore().collection("users").document(uid).getDocument()
+            data = try await remoteStore.fetchProfileDocument(uid: uid)
         } catch {
             print("UserProfileStore: failed to fetch profile - \(error.localizedDescription)")
             return
         }
-        guard let data = snapshot.data() else { return }
+        guard let data else { return }
         guard let decoded = UserProfile.decoded(from: data) else {
             print("UserProfileStore: failed to decode profile document")
             return
