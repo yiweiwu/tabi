@@ -6,8 +6,8 @@ import GoogleSignIn
 
 struct AuthenticationPageView: View {
     @Environment(OnboardingCoordinator.self) private var coordinator
-    @State private var showEmailSignUp = false
     @State private var showPhoneSignUp = false
+    @State private var isSignInMode = false
     @State private var currentNonce: String?
     @State private var isSigningIn = false
     @State private var authError: String?
@@ -70,34 +70,37 @@ struct AuthenticationPageView: View {
                     
                     // Form Fields
                     VStack(spacing: 16) {
-                        // User name section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("User name")
-                                .font(.subheadline)
-                                .foregroundColor(.primary)
-                            
-                            HStack {
-                                Image(systemName: "person")
-                                    .foregroundColor(.tabiGray)
-                                TextField("Full name", text: $fullName)
-                                    .textContentType(.name)
-                                    .autocapitalization(.words)
-                                    .onChange(of: fullName) { _, newValue in
-                                        let parts = newValue.trimmingCharacters(in: .whitespaces)
-                                            .components(separatedBy: " ")
-                                        coordinator.firstName = parts.first ?? ""
-                                        coordinator.lastName = parts.dropFirst().joined(separator: " ")
-                                    }
+                        // User name section (sign-up only - a returning
+                        // user's name already lives on their profile doc)
+                        if !isSignInMode {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("User name")
+                                    .font(.subheadline)
+                                    .foregroundColor(.primary)
+
+                                HStack {
+                                    Image(systemName: "person")
+                                        .foregroundColor(.tabiGray)
+                                    TextField("Full name", text: $fullName)
+                                        .textContentType(.name)
+                                        .autocapitalization(.words)
+                                        .onChange(of: fullName) { _, newValue in
+                                            let parts = newValue.trimmingCharacters(in: .whitespaces)
+                                                .components(separatedBy: " ")
+                                            coordinator.firstName = parts.first ?? ""
+                                            coordinator.lastName = parts.dropFirst().joined(separator: " ")
+                                        }
+                                }
+                                .padding()
+                                .background(Color.tabiCard)
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
                             }
-                            .padding()
-                            .background(Color.tabiCard)
-                            .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                            )
                         }
-                        
+
                         // Email section
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Email")
@@ -155,12 +158,8 @@ struct AuthenticationPageView: View {
                     // Continue Button (smaller, centered)
                     HStack {
                         Spacer()
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                coordinator.nextPage()
-                            }
-                        }) {
-                            Text("Continue")
+                        Button(action: handleEmailContinue) {
+                            Text(isSignInMode ? "Sign in" : "Continue")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 40)
@@ -170,6 +169,8 @@ struct AuthenticationPageView: View {
                                         .fill(Color.tabiLavender)
                                 )
                         }
+                        .disabled(!isEmailFormValid || isSigningIn)
+                        .opacity(isEmailFormValid ? 1.0 : 0.5)
                         Spacer()
                     }
                     .padding(.top, 12)
@@ -193,14 +194,15 @@ struct AuthenticationPageView: View {
                     .padding(.horizontal, 32)
                     .padding(.top, 12)
 
-                    // Sign in link
+                    // Sign in / sign up toggle
                     HStack(spacing: 4) {
-                        Text("Do you have account?")
+                        Text(isSignInMode ? "Don't have an account?" : "Do you have account?")
                             .font(.subheadline)
                             .foregroundColor(.tabiGray)
-                        
-                        Button("Sign in") {
-                            // Handle sign in
+
+                        Button(isSignInMode ? "Sign up" : "Sign in") {
+                            authError = nil
+                            isSignInMode.toggle()
                         }
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.tabiLavender)
@@ -239,9 +241,6 @@ struct AuthenticationPageView: View {
                 }
             }
         }
-        .sheet(isPresented: $showEmailSignUp) {
-            EmailSignUpSheet()
-        }
         .sheet(isPresented: $showPhoneSignUp) {
             PhoneSignUpSheet()
         }
@@ -251,6 +250,33 @@ struct AuthenticationPageView: View {
     }
 
     // MARK: - Authentication Handlers
+
+    private var isEmailFormValid: Bool {
+        guard !email.isEmpty, password.count >= 6 else { return false }
+        return isSignInMode || !fullName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func handleEmailContinue() {
+        authError = nil
+        isSigningIn = true
+        Task {
+            do {
+                if isSignInMode {
+                    _ = try await AuthenticationManager.shared.signIn(withEmail: email, password: password)
+                } else {
+                    _ = try await AuthenticationManager.shared.signUp(withEmail: email, password: password)
+                    MedicationManager.shared.discardLegacyMedicationsForNewAccount()
+                }
+                await UserProfileStore.shared.fetchIfNeeded()
+                prefillFromExistingProfile()
+                isSigningIn = false
+                coordinator.nextPage()
+            } catch {
+                isSigningIn = false
+                authError = error.localizedDescription
+            }
+        }
+    }
 
     private func handleSignInWithApple() {
         let nonce = AuthenticationManager.shared.startSignInWithAppleFlow()
@@ -288,8 +314,12 @@ struct AuthenticationPageView: View {
             isSigningIn = true
             Task {
                 do {
-                    _ = try await AuthenticationManager.shared.signInWithApple(idTokenString: idTokenString, nonce: nonce, fullName: credential.fullName)
+                    let authResult = try await AuthenticationManager.shared.signInWithApple(idTokenString: idTokenString, nonce: nonce, fullName: credential.fullName)
+                    if authResult.additionalUserInfo?.isNewUser == true {
+                        MedicationManager.shared.discardLegacyMedicationsForNewAccount()
+                    }
                     await UserProfileStore.shared.fetchIfNeeded()
+                    prefillFromExistingProfile()
                     prefillNameIfNewAccount(givenName: credential.fullName?.givenName, familyName: credential.fullName?.familyName)
                     isSigningIn = false
                     coordinator.nextPage()
@@ -311,8 +341,12 @@ struct AuthenticationPageView: View {
         authError = nil
         isSigningIn = true
         do {
-            _ = try await AuthenticationManager.shared.signInWithGoogle(presenting: presentingViewController)
+            let authResult = try await AuthenticationManager.shared.signInWithGoogle(presenting: presentingViewController)
+            if authResult.additionalUserInfo?.isNewUser == true {
+                MedicationManager.shared.discardLegacyMedicationsForNewAccount()
+            }
             await UserProfileStore.shared.fetchIfNeeded()
+            prefillFromExistingProfile()
             let profile = GIDSignIn.sharedInstance.currentUser?.profile
             prefillNameIfNewAccount(givenName: profile?.givenName, familyName: profile?.familyName)
             isSigningIn = false
@@ -323,12 +357,31 @@ struct AuthenticationPageView: View {
         }
     }
 
+    // Populates onboarding's profile fields from an already-persisted
+    // Firestore profile right after a sign-in's fetchIfNeeded() completes -
+    // covers every returning-user path (email sign-in, and Apple/Google
+    // when the account already existed). Without this, ProfileSetupPageView
+    // binds directly to OnboardingCoordinator's fields (see
+    // coordinator.firstName in that file), which otherwise stay at their
+    // blank/default init values for a returning user going through
+    // onboarding again (e.g. reinstalled the app, or never completed it
+    // locally) - completeOnboarding() would then overwrite their real
+    // name/age/gender in Firestore with those blanks. No-ops for a brand
+    // new account, since its profile is still the default UserProfile().
+    private func prefillFromExistingProfile() {
+        let profile = UserProfileStore.shared.profile
+        guard !profile.firstName.isEmpty else { return }
+        coordinator.firstName = profile.firstName
+        coordinator.lastName = profile.lastName
+        coordinator.age = profile.age
+        if !profile.gender.isEmpty { coordinator.selectedGender = profile.gender }
+    }
+
     // Apple/Google both hand back the account's name on first sign-in - use
     // it so a brand-new user isn't retyping a name the provider already
-    // gave us. Only applies to new accounts: if fetchIfNeeded() above pulled
-    // down an existing profile (returning user, e.g. reinstalled the app),
-    // firstName is already set and this is skipped so we don't clobber a
-    // name they may have since edited in-app.
+    // gave us. Only applies to new accounts: if prefillFromExistingProfile()
+    // above already found a returning user's saved profile, firstName is
+    // already set and this is skipped so we don't clobber it.
     private func prefillNameIfNewAccount(givenName: String?, familyName: String?) {
         // Don't clobber a name the user already typed into the "Full name"
         // field on this page, or one a returning account already has saved.
@@ -436,107 +489,6 @@ struct AuthButton: View {
                     .stroke(borderColor ?? Color.clear, lineWidth: 1)
             )
         }
-    }
-}
-
-// MARK: - Email Sign Up Sheet
-
-struct EmailSignUpSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(OnboardingCoordinator.self) private var coordinator
-    @State private var email = ""
-    @State private var password = ""
-    @State private var confirmPassword = ""
-    
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                VStack(spacing: 8) {
-                    Text("Sign Up with Email")
-                        .font(.title2.bold())
-                    
-                    Text("Create your Tabi account")
-                        .font(.body)
-                        .foregroundColor(.tabiGray)
-                }
-                .padding(.top, 20)
-                
-                VStack(spacing: 16) {
-                    TextField("Email", text: $email)
-                        .textContentType(.emailAddress)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                        .textFieldStyle(.plain)
-                        .padding()
-                        .background(Color.tabiCard)
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                    
-                    SecureField("Password", text: $password)
-                        .textContentType(.newPassword)
-                        .textFieldStyle(.plain)
-                        .padding()
-                        .background(Color.tabiCard)
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                    
-                    SecureField("Confirm Password", text: $confirmPassword)
-                        .textContentType(.newPassword)
-                        .textFieldStyle(.plain)
-                        .padding()
-                        .background(Color.tabiCard)
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                }
-                .padding(.horizontal, 32)
-                
-                Button(action: {
-                    handleEmailSignUp()
-                }) {
-                    Text("Sign Up")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.tabiOrange)
-                        )
-                }
-                .padding(.horizontal, 32)
-                .disabled(!isFormValid)
-                .opacity(isFormValid ? 1.0 : 0.5)
-                
-                Spacer()
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-    
-    private var isFormValid: Bool {
-        !email.isEmpty && !password.isEmpty && password == confirmPassword && password.count >= 6
-    }
-    
-    private func handleEmailSignUp() {
-        print("Email sign up: \(email)")
-        dismiss()
-        coordinator.nextPage()
     }
 }
 

@@ -93,6 +93,19 @@ class MedicationManager: ObservableObject {
         }
     }
 
+    // Discards this device's pre-Firestore legacy medications instead of
+    // migrating them. Called right after a brand-new account is created
+    // (see AuthenticationPageView's sign-up handlers) - the legacy blob
+    // carries no account attribution, so a fresh account has no more claim
+    // to it than any other, and letting migrateLegacyLocalMedicationsIfNeeded
+    // hand it to whichever account happens to fetch first would leak
+    // another person's medications (regulated data - see CLAUDE.md's
+    // Privacy & Compliance section) into a stranger's account on a shared
+    // device. Must run before this account's first fetch.
+    func discardLegacyMedicationsForNewAccount() {
+        userDefaults.removeObject(forKey: Self.legacyMedicationsKey)
+    }
+
     // One-time upload of medications saved locally before Firestore-backed
     // sync existed. Guarded by the legacy UserDefaults key's presence
     // rather than a separate flag: once every medication uploads
@@ -101,7 +114,8 @@ class MedicationManager: ObservableObject {
     // instead of re-migrating stale data. A partial failure leaves the key
     // in place, so the next launch retries in full - saveMedication is a
     // full overwrite, so re-uploading an already-succeeded entry is
-    // harmless.
+    // harmless. Only reachable for an account that isn't brand-new - see
+    // discardLegacyMedicationsForNewAccount() above.
     private func migrateLegacyLocalMedicationsIfNeeded(uid: String) async {
         guard let data = userDefaults.data(forKey: Self.legacyMedicationsKey),
               let legacy = try? JSONDecoder().decode([Medication].self, from: data),
