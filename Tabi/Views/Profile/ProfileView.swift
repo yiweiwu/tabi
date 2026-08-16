@@ -923,7 +923,6 @@ struct SettingsView: View {
         Task {
             do {
                 try await AuthenticationManager.shared.deleteAccountAndAllData()
-                medicationManager.deleteAllLocalData()
                 isDeletingAccount = false
                 hasCompletedOnboarding = false
                 dismiss()

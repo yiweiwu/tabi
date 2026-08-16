@@ -133,8 +133,10 @@ class AuthenticationManager {
         let db = Firestore.firestore()
         try await deleteAllDocuments(in: db.collection("users").document(uid).collection("doses"))
         try await deleteAllDocuments(in: db.collection("users").document(uid).collection("sharedPeople"))
+        try await deleteAllDocuments(in: db.collection("users").document(uid).collection("medications"))
         try await db.collection("users").document(uid).delete()
         UserProfileStore.shared.reset()
+        MedicationManager.shared.deleteAllLocalData()
         try await user.delete()
     }
 

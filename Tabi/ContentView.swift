@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Main Content View
 
 struct ContentView: View {
-    @StateObject private var medicationManager = MedicationManager()
+    @ObservedObject private var medicationManager = MedicationManager.shared
     @State private var selectedTab = 0
 
     var body: some View {
