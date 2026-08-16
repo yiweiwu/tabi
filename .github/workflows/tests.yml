@@ -14,14 +14,15 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      # GoogleService-Info.plist is gitignored (per-developer, see CLAUDE.md).
-      # This dummy stands in just so FirebaseApp.configure() (called from
-      # TABIApp.init(), which runs when TabiTests' host app launches) has a
-      # well-formed plist to parse. None of TabiTests' assertions reach live
-      # Firebase - Auth/Firestore are never actually called - so fake values
-      # are fine; this would need to become a real project if that changes.
-      - name: Write dummy GoogleService-Info.plist
-        run: cp .github/ci/GoogleService-Info.plist Tabi/GoogleService-Info.plist
+      # GoogleService-Info.plist and Config.swift are both gitignored
+      # (per-developer secrets, see CLAUDE.md) but required just to compile
+      # and launch the app target that hosts TabiTests. Neither test suite
+      # actually calls live Firebase or Gemini, so dummy values are fine -
+      # this would need to become real credentials if that ever changes.
+      - name: Write dummy per-developer config files
+        run: |
+          cp .github/ci/GoogleService-Info.plist Tabi/GoogleService-Info.plist
+          cp .github/ci/Config.swift Tabi/Config.swift
 
       - name: Pick an available iPhone simulator
         id: sim

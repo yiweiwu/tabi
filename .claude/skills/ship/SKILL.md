@@ -5,7 +5,7 @@ description: Push the current branch, merge it into main, and clean up. Run when
 
 # Ship
 
-Pushes the current branch, merges it into main, and cleans up. No review required.
+Pushes the current branch, merges it into main, and cleans up. No human review required, but if the repo has automated checks (CI), they must pass first.
 
 ## Steps
 
@@ -48,11 +48,24 @@ Pushes the current branch, merges it into main, and cleans up. No review require
 
    Then stop. Once they return after authenticating, pick up from step 4 and do everything for them.
 
-   Once authenticated, create a PR using `<user_context>` as the body, then merge it:
+   Once authenticated, create the PR using `<user_context>` as the body:
    ```bash
    gh pr create --title "<branch name, humanized>" --body "<user_context>"
-   gh pr merge --squash --delete-branch
    ```
+
+   If this repo has automated checks configured (a `.github/workflows/` directory exists), wait for them before merging - don't run `gh pr merge` until they've finished:
+   ```bash
+   gh pr checks --watch
+   ```
+   - If it exits successfully (checks passed, or there were none to run), proceed to merge:
+     ```bash
+     gh pr merge --squash --delete-branch
+     ```
+   - If a check fails, **do not merge**. Look at the failing job to understand what broke (`gh run view <run-id> --log-failed`), then tell the user in plain language - no raw logs unless they ask for them:
+     > "The automated tests caught a problem before this went out: <plain-language summary>. Want me to fix it, or hold off for now?"
+     If they want it fixed, fix it, push the commit, and re-run `gh pr checks --watch` before merging again. If they'd rather hold off, leave the PR open and unmerged, and stop - skip steps 5 and 6.
+
+   If there's no `.github/workflows/` directory, skip straight to `gh pr merge --squash --delete-branch`.
 
    If `gh pr merge` fails due to conflicts:
    - Tell the user:
@@ -65,7 +78,7 @@ Pushes the current branch, merges it into main, and cleans up. No review require
    - Only involve the user if the conflict is genuinely ambiguous — both sides changed the same logic in incompatible ways and the right answer depends on product intent. In that case, describe in plain English with zero jargon and ask one concrete question, e.g.:
      > "You changed how the reminder time works, and so did someone else. Yours sends it 10 minutes early; theirs sends it at the exact time. Which do you want?"
    - Never show raw code, diff output, or conflict markers to the user.
-   - After resolving: `git add -A && git commit --no-edit`, then re-run `gh pr merge --squash --delete-branch`.
+   - After resolving: `git add -A && git commit --no-edit && git push`, then (if this repo has checks configured) `gh pr checks --watch` again before re-running `gh pr merge --squash --delete-branch`.
 
 5. Switch back to main and pull:
    ```bash
