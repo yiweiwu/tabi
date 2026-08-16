@@ -4,9 +4,21 @@ on:
   pull_request:
     branches: [main]
 
+# Without this, pushing a new commit to a PR starts a new run alongside
+# whatever's still running from the previous push instead of replacing it -
+# exactly how two overlapping runs ended up stuck in progress at once.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: macos-15
+    # A full cold build (no cache hit) has taken up to ~18 minutes; a hung
+    # run has been observed sitting well past that with zero log output -
+    # this bounds it so a future hang fails clearly instead of running (and
+    # burning CI minutes) indefinitely.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
