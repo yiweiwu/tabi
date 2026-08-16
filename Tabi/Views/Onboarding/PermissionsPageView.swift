@@ -25,28 +25,25 @@ struct PermissionsPageView: View {
                 .padding(.trailing, 24)
             }
             
-            VStack(spacing: 40) {
-                Spacer()
-                
+            VStack(spacing: 24) {
                 // Header
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 60))
+                        .font(.system(size: 50))
                         .foregroundColor(.tabiLavender)
-                    
+
                     Text("Enable Permissions")
                         .font(.title.bold())
                         .foregroundColor(.primary)
-                    
+
                     Text("Allow Tabi to help you stay on track")
                         .font(.body)
                         .foregroundColor(.tabiGray)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                 }
-                
-                Spacer()
-                
+                .padding(.top, 20)
+
                 // Permission Items
                 VStack(spacing: 20) {
                     PermissionItemView(
@@ -56,7 +53,7 @@ struct PermissionsPageView: View {
                         status: cameraStatus,
                         action: requestCameraPermission
                     )
-                    
+
                     PermissionItemView(
                         icon: "bell.fill",
                         title: "Push Notifications",
@@ -66,18 +63,18 @@ struct PermissionsPageView: View {
                     )
                 }
                 .padding(.horizontal, 32)
-                
-                Spacer()
-                
+
+                Spacer(minLength: 12)
+
                 // Info text
                 Text("You can change these permissions anytime in Settings")
                     .font(.caption)
                     .foregroundColor(.tabiGray)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
-                    .padding(.bottom, 20)
+                    .padding(.bottom, 132)
             }
-            .padding(.vertical, 40)
+            .padding(.top, 8)
         }
         .onAppear {
             checkPermissionStatuses()

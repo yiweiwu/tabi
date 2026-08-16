@@ -23,7 +23,8 @@ struct WelcomeToTabiPageView: View {
             
             VStack(spacing: 40) {
             Spacer()
-            
+                .frame(height: 24)
+
             // App Logo/Icon
             VStack(spacing: 20) {
                 Circle()

@@ -4,20 +4,14 @@ A complete onboarding experience for the Tabi medication tracking app.
 
 ## 📱 Onboarding Flow
 
-### 1. **Splash Page** (`SplashPageView.swift`)
-- Displays the Tabi logo with an animated entrance
-- Auto-advances to the welcome screen after 2 seconds
-- Features gradient background and smooth animations
-
-### 2. **Welcome Page** (`WelcomeToTabiPageView.swift`)
-- Shows "Welcome to Tabi" message
-- Displays tagline: "Create an account to track your meds and share with family"
+### 1. **Welcome Page** (`WelcomeToTabiPageView.swift`)
+- First screen shown - displays the Tabi logo, "Welcome to Tabi" message, and tagline: "Stay on top of your meds with ease"
 - Lists key app features:
   - Track Medications
   - Scan & Add
   - Share & Care
 
-### 3. **Authentication Page** (`AuthenticationPageView.swift`)
+### 2. **Authentication Page** (`AuthenticationPageView.swift`)
 Multiple sign-up options:
 - **Continue with Apple** (Sign in with Apple)
 - **Continue with Google**
@@ -28,7 +22,7 @@ Multiple sign-up options:
 
 Includes Terms of Service and Privacy Policy links.
 
-### 4. **Profile Setup Page** (`ProfileSetupPageView.swift`)
+### 3. **Profile Setup Page** (`ProfileSetupPageView.swift`)
 "Let's Get Started" - Collects user information:
 - **First Name** (required)
 - **Age** (optional)
@@ -52,7 +46,7 @@ page has no Last Name field.
 This is the only page whose data actually reaches Firestore today - see
 "Data Persistence" below.
 
-### 5. **Permissions Page** (`PermissionsPageView.swift`)
+### 4. **Permissions Page** (`PermissionsPageView.swift`)
 Requests two key permissions:
 
 - **Camera Access**
@@ -67,7 +61,7 @@ Requests two key permissions:
 
 Both permissions can be skipped, but are strongly encouraged.
 
-### 6. **Completion Page** (`CompletionPageView.swift`)
+### 5. **Completion Page** (`CompletionPageView.swift`)
 - Success checkmark with animation
 - Personalized welcome message using the user's first name
 - Quick tips for getting started:
@@ -195,12 +189,11 @@ The authentication page provides UI for multiple sign-in methods:
 ```
 Tabi/Views/Onboarding/
 ├── OnboardingFlow.swift              # Main coordinator and container view
-├── SplashPageView.swift              # Page 1: Logo splash
-├── WelcomeToTabiPageView.swift       # Page 2: Welcome message
-├── AuthenticationPageView.swift      # Page 3: Sign-up options
-├── ProfileSetupPageView.swift        # Page 4: User profile (updated)
-├── PermissionsPageView.swift         # Page 5: Camera & notifications
-├── CompletionPageView.swift          # Page 6: Success & tips
+├── WelcomeToTabiPageView.swift       # Page 1: Welcome message
+├── AuthenticationPageView.swift      # Page 2: Sign-up options
+├── ProfileSetupPageView.swift        # Page 3: User profile (updated)
+├── PermissionsPageView.swift         # Page 4: Camera & notifications
+├── CompletionPageView.swift          # Page 5: Success & tips
 └── ONBOARDING_README.md              # This file
 ```
 

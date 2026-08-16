@@ -5,17 +5,16 @@ import SwiftUI
 @MainActor
 @Observable
 class OnboardingCoordinator {
-    var currentPage: OnboardingPage = .splash
+    var currentPage: OnboardingPage = .welcome
     var isOnboardingComplete = false
-    
+
     // Profile data
     var firstName = ""
     var lastName = ""
     var age = ""
     var selectedGender = "Prefer not to say"
-    
+
     enum OnboardingPage {
-        case splash
         case welcome
         case medicineTracking
         case pillReminders
@@ -25,11 +24,9 @@ class OnboardingCoordinator {
         case permissions
         case completion
     }
-    
+
     func nextPage() {
         switch currentPage {
-        case .splash:
-            currentPage = .welcome
         case .welcome:
             currentPage = .medicineTracking
         case .medicineTracking:
@@ -48,11 +45,9 @@ class OnboardingCoordinator {
             completeOnboarding()
         }
     }
-    
+
     func previousPage() {
         switch currentPage {
-        case .welcome:
-            currentPage = .splash
         case .medicineTracking:
             currentPage = .welcome
         case .pillReminders:
@@ -67,8 +62,8 @@ class OnboardingCoordinator {
             currentPage = .profileSetup
         case .completion:
             currentPage = .permissions
-        case .splash:
-            break // Can't go back from splash
+        case .welcome:
+            break // Can't go back from welcome - it's now the first page
         }
     }
     
@@ -99,12 +94,9 @@ struct OnboardingView: View {
             
             Group {
                 switch coordinator.currentPage {
-                case .splash:
-                    SplashPageView()
-                        .transition(.opacity)
                 case .welcome:
                     WelcomeToTabiPageView()
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+                        .transition(.opacity)
                 case .medicineTracking:
                     MedicineTrackingPageView()
                         .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
@@ -157,7 +149,7 @@ struct OnboardingView: View {
                         Spacer()
                     }
                     .padding(.horizontal, 32)
-                    .padding(.bottom, 40)
+                    .padding(.bottom, bottomButtonPadding)
                 }
             }
         }
@@ -179,16 +171,6 @@ struct OnboardingView: View {
                     }
                 }
         )
-        .onAppear {
-            // Auto-advance from splash after 2 seconds
-            if coordinator.currentPage == .splash {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        coordinator.nextPage()
-                    }
-                }
-            }
-        }
         .onChange(of: coordinator.isOnboardingComplete) { _, newValue in
             if newValue {
                 isOnboardingComplete = true
@@ -212,10 +194,8 @@ struct OnboardingView: View {
     
     private var buttonTitle: String {
         switch coordinator.currentPage {
-        case .splash:
-            return "Continue"
         case .welcome:
-            return "Continue"
+            return "Get Started"
         case .medicineTracking, .pillReminders, .familySharing:
             return "Continue"
         case .authentication:
@@ -237,6 +217,20 @@ struct OnboardingView: View {
             return false // Auth buttons handle their own navigation
         default:
             return true
+        }
+    }
+
+    // Permissions and completion pages both have content (the disclosure
+    // text / Quick Tips) that sits close to the button, so they need it
+    // lifted further off the bottom edge than other pages.
+    private var bottomButtonPadding: CGFloat {
+        switch coordinator.currentPage {
+        case .permissions:
+            return 72
+        case .completion:
+            return 110
+        default:
+            return 40
         }
     }
 }
@@ -532,19 +526,16 @@ struct FamilySharingPageView: View {
             Spacer()
             
             // Image/Illustration Area
-            ZStack {
-                // Background image simulation
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 280, height: 380)
-                    .overlay(
-                        // Family/caregiver image placeholder
-                        Image(systemName: "person.2.fill")
-                            .font(.system(size: 80))
-                            .foregroundColor(.white.opacity(0.7))
-                    )
-            }
-            .padding(.bottom, 40)
+            // Fixed-height container matching the other intro pages' image
+            // frame (380pt) so this page's shorter, wider photo still starts
+            // at the same top position instead of sitting lower on screen.
+            Image("family-sharing")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 360)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .frame(height: 380, alignment: .top)
+                .padding(.bottom, 40)
             
             // Page indicator dots
             HStack(spacing: 8) {
