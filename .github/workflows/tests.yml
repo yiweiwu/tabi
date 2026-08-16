@@ -1,0 +1,42 @@
+name: Unit Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      # GoogleService-Info.plist is gitignored (per-developer, see CLAUDE.md).
+      # This dummy stands in just so FirebaseApp.configure() (called from
+      # TABIApp.init(), which runs when TabiTests' host app launches) has a
+      # well-formed plist to parse. None of TabiTests' assertions reach live
+      # Firebase - Auth/Firestore are never actually called - so fake values
+      # are fine; this would need to become a real project if that changes.
+      - name: Write dummy GoogleService-Info.plist
+        run: cp .github/ci/GoogleService-Info.plist Tabi/GoogleService-Info.plist
+
+      - name: Pick an available iPhone simulator
+        id: sim
+        run: |
+          NAME=$(xcrun simctl list devices available iOS -j \
+            | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].name')
+          if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
+            echo "error: no available iPhone simulator found on this runner" >&2
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: |
+          xcrun xcodebuild test \
+            -scheme Tabi \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -only-testing:TabiTests
