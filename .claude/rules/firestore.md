@@ -1,9 +1,10 @@
 ---
 paths:
-  - "Tabi/Services/**"
+  - "Tabi/Services/Firestore/**"
   - "Tabi/ViewModels/MedicationManager.swift"
   - "firestore.rules"
   - "firestore.indexes.json"
+  - "functions/**"
 ---
 
 # Firestore Conventions
@@ -36,3 +37,4 @@ Stored models: `Medication`, `DoseEntry`, `SharedPerson`, `UserProfile`. Firesto
 - New Firestore collections need an explicit `match` rule in `firestore.rules` — the default is deny-all, and a missing rule fails silently (client write is rejected, no error surfaced). This applies in particular to any collection that triggers an SMS-sending Cloud Function.
 - Editing `firestore.rules` only changes the local file — it has no effect on the live project until deployed with `firebase deploy --only firestore:rules --project tabi-47030`. A merged rules change that was never deployed is indistinguishable from a missing rule: both silently reject the client write.
 - Never swallow a Firestore error (bare `try?`, a fire-and-forget `setData`/`addDocument` that ignores its `error` parameter) — a `permission-denied` from a rules mismatch then looks identical to "no data yet," which is exactly what let a real bug (the deploy gap above) go unnoticed until user data silently disappeared. At minimum `print()` it — see `UserProfileStore.persist()`/`fetchIfNeeded()` for the pattern.
+- `MissedDoseAlertService`/`ConnectionConfirmationService` write docs that a Cloud Function (`functions/index.js`) picks up to send SMS. All outbound SMS goes through `sendSms()` there, which appends the AWS toll-free/10DLC-required "Reply STOP to unsubscribe, HELP for help." footer to every message — don't add that language at a call site (client or function), it's enforced once, centrally, so it can't be dropped by a future caller.
