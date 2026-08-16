@@ -32,6 +32,7 @@ Tabi/
 ├── Models/
 │   ├── Medication.swift       — Medication, GameStats, Achievement
 │   ├── DoseModels.swift       — DoseStatus, DoseEntry, DoseSchedule, DetectedMedicationInfo
+│   ├── UserProfile.swift      — UserProfile, UserSettings, Pharmacy, Allergy
 │   └── MedicationTimelineModels.swift — ScheduledMedication, Weekday, DoseDotStatus (mock data backing the Calendar tab's week/month view — not wired to MedicationManager/Firestore yet)
 ├── ViewModels/
 │   ├── MedicationManager.swift

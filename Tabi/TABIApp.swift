@@ -30,6 +30,11 @@ struct TABIApp: App {
                 // Covers a returning signed-in user relaunching the app -
                 // the onboarding flow's own sign-in handlers fetch for the
                 // new-signup case instead (see AuthenticationPageView).
+                // Must wait for Firebase to finish restoring the persisted
+                // session first, or `uid` can read nil on a fresh process
+                // launch (e.g. reopening after iOS reaps a backgrounded
+                // app) and silently skip the fetch for the whole session.
+                await AuthenticationManager.shared.waitForInitialAuthState()
                 await UserProfileStore.shared.fetchIfNeeded()
             }
             .onOpenURL { url in

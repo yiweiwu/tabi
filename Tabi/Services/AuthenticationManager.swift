@@ -41,10 +41,44 @@ class AuthenticationManager {
     // process lifetime, so the listener is never torn down.
     private var authStateHandle: AuthStateDidChangeListenerHandle?
 
+    // Reading `Auth.auth().currentUser` synchronously right at cold launch
+    // can race Firebase's async restore of a persisted session from the
+    // keychain and return nil even for a signed-in user - this happens in
+    // particular right after the app is backgrounded and reaped by iOS,
+    // since reopening it is a fresh process launch. The first
+    // addStateDidChangeListener callback is the documented, reliable signal
+    // that the restore has finished either way, so callers that need to
+    // know `uid` before it's available synchronously should await this.
+    private var hasReceivedInitialAuthState = false
+    private var initialAuthStateWaiters: [CheckedContinuation<Void, Never>] = []
+
     private init() {
         currentUser = Auth.auth().currentUser
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
-            self?.currentUser = user
+            self?.handleAuthStateChange(user: user)
+        }
+    }
+
+    private func handleAuthStateChange(user: FirebaseAuth.User?) {
+        currentUser = user
+        resolveInitialAuthStateWaitersIfNeeded()
+    }
+
+    // Every addStateDidChangeListener callback runs this, but only the
+    // first one (the initial restore, whether it found a session or not)
+    // should release anything waiting on waitForInitialAuthState().
+    private func resolveInitialAuthStateWaitersIfNeeded() {
+        guard !hasReceivedInitialAuthState else { return }
+        hasReceivedInitialAuthState = true
+        let waiters = initialAuthStateWaiters
+        initialAuthStateWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    func waitForInitialAuthState() async {
+        guard !hasReceivedInitialAuthState else { return }
+        await withCheckedContinuation { continuation in
+            initialAuthStateWaiters.append(continuation)
         }
     }
 
