@@ -52,12 +52,13 @@ Tabi/
 │   ├── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
 │   └── MedicationTimelineProvider.swift — `MedicationTimelineProviding` protocol + `MockMedicationTimelineProvider`; the seam to swap in a real backend for the Calendar tab later
 └── Views/
-    ├── Today/    — TodayView, WeekStripHeader, TABIMedicationRow
-    ├── Calendar/ — CalendarView + calendar subcomponents
-    ├── Sharing/  — SharingView
-    ├── Profile/  — ProfileView (incl. SettingsView), PrivacyPolicyView
-    ├── Camera/   — NewMedicationCameraView, CameraView, DetectedMedicationView, AnalysisResultView
-    └── Progress/ — MedicationProgressView, AchievementRow, WeeklyProgressView
+    ├── Today/     — TodayView, WeekStripHeader, TABIMedicationRow
+    ├── Calendar/  — CalendarView + calendar subcomponents
+    ├── Sharing/   — SharingView
+    ├── Profile/   — ProfileView (incl. SettingsView), PrivacyPolicyView
+    ├── Camera/    — NewMedicationCameraView, CameraView, DetectedMedicationView, AnalysisResultView
+    ├── Progress/  — MedicationProgressView, AchievementRow, WeeklyProgressView
+    └── Onboarding/ — OnboardingFlow (coordinator + most pages), SplashPageView, WelcomeToTabiPageView, AuthenticationPageView, ProfileSetupPageView, PermissionsPageView, CompletionPageView
 ```
 
 **Where to add new code:**

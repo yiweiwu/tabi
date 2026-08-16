@@ -193,7 +193,7 @@ The authentication page provides UI for multiple sign-in methods:
 ## 📁 File Structure
 
 ```
-Onboarding/
+Tabi/Views/Onboarding/
 ├── OnboardingFlow.swift              # Main coordinator and container view
 ├── SplashPageView.swift              # Page 1: Logo splash
 ├── WelcomeToTabiPageView.swift       # Page 2: Welcome message
@@ -201,9 +201,10 @@ Onboarding/
 ├── ProfileSetupPageView.swift        # Page 4: User profile (updated)
 ├── PermissionsPageView.swift         # Page 5: Camera & notifications
 ├── CompletionPageView.swift          # Page 6: Success & tips
-├── DesignSystem.swift                # Color palette
-└── TabiApp.swift                     # App entry point example
+└── ONBOARDING_README.md              # This file
 ```
+
+Design tokens live in `Tabi/DesignSystem.swift` (shared app-wide, not onboarding-specific). The app entry point is `Tabi/TABIApp.swift`.
 
 ## 🐛 Troubleshooting
 
