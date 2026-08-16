@@ -3,7 +3,14 @@ import UIKit
 
 // MARK: - Medication Manager
 
+// Single owner of medication state: an in-memory cache backed by Firestore,
+// mirroring UserProfileStore's pattern exactly (see
+// fetchIfNeeded()/performFetch(uid:) below). A singleton (like
+// UserProfileStore), passed down as @ObservedObject from ContentView rather
+// than recreated.
 class MedicationManager: ObservableObject {
+    static let shared = MedicationManager()
+
     @Published var medications: [Medication] = []
     @Published var gameStats = GameStats()
 
@@ -13,37 +20,151 @@ class MedicationManager: ObservableObject {
     // observe UserProfileStore directly (see ProfileView).
     var userProfile: UserProfile { UserProfileStore.shared.profile }
 
-    private let userDefaults = UserDefaults.standard
-    private let medicationsKey = "savedMedications"
+    private let userDefaults: UserDefaults
+    // UserDefaults was medications' only storage before Firestore-backed
+    // sync existed. It's not used as an ongoing cache anymore - this key is
+    // read (and then cleared) exactly once, in migrateLegacyLocalMedicationsIfNeeded
+    // below, purely to carry an existing install's data into Firestore.
+    static let legacyMedicationsKey = "savedMedications"
+    private let remoteStore: MedicationRemoteStore
+    private var hasFetched = false
 
-    init() {
-        loadMedications()
+    // Not private: `.shared` is still the only instance the app itself
+    // constructs (always with the real Firestore-backed remoteStore and
+    // .standard defaults), but tests need an isolated UserDefaults suite to
+    // exercise the legacy migration without touching a real device's data,
+    // and SwiftUI previews need their own instance too.
+    init(remoteStore: MedicationRemoteStore = FirestoreMedicationRemoteStore(), userDefaults: UserDefaults = .standard) {
+        self.remoteStore = remoteStore
+        self.userDefaults = userDefaults
     }
 
-    private func loadMedications() {
-        guard let data = userDefaults.data(forKey: medicationsKey),
-              let decoded = try? JSONDecoder().decode([Medication].self, from: data) else {
-            medications = []
+    // MARK: - Firestore sync
+
+    // What fetchIfNeeded should do, given its two inputs, kept as a pure
+    // decision separate from the Firestore I/O below - mirrors
+    // UserProfileStore.decideFetch for the same reason (testable without
+    // live Firebase).
+    enum FetchDecision: Equatable {
+        case skipAlreadyFetched
+        case skipNoSignedInUser
+        case fetch(uid: String)
+    }
+
+    static func decideFetch(hasFetched: Bool, uid: String?) -> FetchDecision {
+        guard !hasFetched else { return .skipAlreadyFetched }
+        guard let uid else { return .skipNoSignedInUser }
+        return .fetch(uid: uid)
+    }
+
+    // One-shot fetch into the in-memory cache, called from TABIApp's launch
+    // .task alongside UserProfileStore.fetchIfNeeded().
+    func fetchIfNeeded() async {
+        switch Self.decideFetch(hasFetched: hasFetched, uid: AuthenticationManager.shared.uid) {
+        case .skipAlreadyFetched:
+            return
+        case .skipNoSignedInUser:
+            print("MedicationManager: skipping fetch - no signed-in user")
+        case .fetch(let uid):
+            hasFetched = true
+            await performFetch(uid: uid)
+        }
+    }
+
+    // Not private: exercised directly in unit tests against a fake
+    // remoteStore, bypassing fetchIfNeeded()'s AuthenticationManager.uid
+    // lookup (which needs live Firebase).
+    func performFetch(uid: String) async {
+        let remote: [Medication]
+        do {
+            remote = try await remoteStore.fetchMedications(uid: uid)
+        } catch {
+            print("MedicationManager: failed to fetch medications - \(error.localizedDescription)")
             return
         }
-        medications = decoded
+
+        guard !remote.isEmpty else {
+            await migrateLegacyLocalMedicationsIfNeeded(uid: uid)
+            return
+        }
+
+        await MainActor.run {
+            self.medications = remote
+        }
     }
 
-    private func saveMedications() {
-        guard let encoded = try? JSONEncoder().encode(medications) else { return }
-        userDefaults.set(encoded, forKey: medicationsKey)
+    // Discards this device's pre-Firestore legacy medications instead of
+    // migrating them. Called right after a brand-new account is created
+    // (see AuthenticationPageView's sign-up handlers) - the legacy blob
+    // carries no account attribution, so a fresh account has no more claim
+    // to it than any other, and letting migrateLegacyLocalMedicationsIfNeeded
+    // hand it to whichever account happens to fetch first would leak
+    // another person's medications (regulated data - see CLAUDE.md's
+    // Privacy & Compliance section) into a stranger's account on a shared
+    // device. Must run before this account's first fetch.
+    func discardLegacyMedicationsForNewAccount() {
+        userDefaults.removeObject(forKey: Self.legacyMedicationsKey)
+    }
+
+    // One-time upload of medications saved locally before Firestore-backed
+    // sync existed. Guarded by the legacy UserDefaults key's presence
+    // rather than a separate flag: once every medication uploads
+    // successfully, the key is removed, so a later genuinely-empty
+    // Firestore fetch (e.g. the user deleted every medication) is trusted
+    // instead of re-migrating stale data. A partial failure leaves the key
+    // in place, so the next launch retries in full - saveMedication is a
+    // full overwrite, so re-uploading an already-succeeded entry is
+    // harmless. Only reachable for an account that isn't brand-new - see
+    // discardLegacyMedicationsForNewAccount() above.
+    private func migrateLegacyLocalMedicationsIfNeeded(uid: String) async {
+        guard let data = userDefaults.data(forKey: Self.legacyMedicationsKey),
+              let legacy = try? JSONDecoder().decode([Medication].self, from: data),
+              !legacy.isEmpty else { return }
+
+        var allSucceeded = true
+        for medication in legacy {
+            let succeeded = await persistRemote(medication, uid: uid)
+            if !succeeded { allSucceeded = false }
+        }
+        guard allSucceeded else { return }
+
+        userDefaults.removeObject(forKey: Self.legacyMedicationsKey)
+        await MainActor.run {
+            self.medications = legacy
+        }
+    }
+
+    @discardableResult
+    private func persistRemote(_ medication: Medication, uid: String? = nil) async -> Bool {
+        guard let uid = uid ?? AuthenticationManager.shared.uid else { return false }
+        do {
+            try await remoteStore.saveMedication(uid: uid, medication: medication)
+            return true
+        } catch {
+            print("MedicationManager: failed to save medication - \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func deleteRemote(_ medication: Medication) async {
+        guard let uid = AuthenticationManager.shared.uid else { return }
+        do {
+            try await remoteStore.deleteMedication(uid: uid, medicationId: medication.id)
+        } catch {
+            print("MedicationManager: failed to delete medication - \(error.localizedDescription)")
+        }
     }
 
     func add(_ medication: Medication) {
         medications.append(medication)
-        saveMedications()
+        Task { await persistRemote(medication) }
     }
 
     private func save(_ medication: Medication) {
         if let index = medications.firstIndex(where: { $0.id == medication.id }) {
             medications[index] = medication
         }
-        saveMedications()
+        Task { await persistRemote(medication) }
     }
 
     // Persists an edited medication (name, dosage, frequency, dose times)
@@ -68,7 +189,7 @@ class MedicationManager: ObservableObject {
             NotificationScheduler.shared.cancel(for: medication.id)
         }
         medications.removeAll { $0.id == medication.id }
-        saveMedications()
+        Task { await deleteRemote(medication) }
     }
 
     func recordMedicationTaken(_ medication: Medication, points: Int) {
@@ -143,13 +264,16 @@ class MedicationManager: ObservableObject {
     }
 
     // Clears everything stored on-device. Firestore-backed data (doses,
-    // sharedPeople, the profile doc) is deleted separately via
-    // AuthenticationManager.deleteAccountAndAllData() - this only covers what
-    // MedicationManager itself owns in UserDefaults.
+    // sharedPeople, medications, the profile doc) is deleted separately via
+    // AuthenticationManager.deleteAccountAndAllData() - this only covers
+    // what MedicationManager itself owns locally. Resets hasFetched so a
+    // subsequent sign-in in the same app session doesn't show stale
+    // medications.
     func deleteAllLocalData() {
         NotificationScheduler.shared.cancelAll()
         medications = []
-        userDefaults.removeObject(forKey: medicationsKey)
+        userDefaults.removeObject(forKey: Self.legacyMedicationsKey)
         gameStats = GameStats()
+        hasFetched = false
     }
 }

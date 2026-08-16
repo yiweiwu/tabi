@@ -113,6 +113,16 @@ class AuthenticationManager {
         return try await Auth.auth().signIn(with: credential)
     }
 
+    // MARK: Sign in with Email
+
+    func signUp(withEmail email: String, password: String) async throws -> AuthDataResult {
+        try await Auth.auth().createUser(withEmail: email, password: password)
+    }
+
+    func signIn(withEmail email: String, password: String) async throws -> AuthDataResult {
+        try await Auth.auth().signIn(withEmail: email, password: password)
+    }
+
     // MARK: Sign out
 
     func signOut() throws {
@@ -133,8 +143,10 @@ class AuthenticationManager {
         let db = Firestore.firestore()
         try await deleteAllDocuments(in: db.collection("users").document(uid).collection("doses"))
         try await deleteAllDocuments(in: db.collection("users").document(uid).collection("sharedPeople"))
+        try await deleteAllDocuments(in: db.collection("users").document(uid).collection("medications"))
         try await db.collection("users").document(uid).delete()
         UserProfileStore.shared.reset()
+        MedicationManager.shared.deleteAllLocalData()
         try await user.delete()
     }
 

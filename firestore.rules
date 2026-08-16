@@ -37,6 +37,19 @@ rules_version = '2';
 //     entry fields inside the list are NOT deeply validated here - only
 //     the list itself (presence, type, size cap).
 //
+// Collection: users/{userId}/medications/{medicationId}
+// Document ID: medicationId (UUID string, matches Medication.id)
+// Fields (mirrors Medication in Models/Medication.swift):
+//   - id: string (required, UUID)
+//   - name, type, emoji, dosage, scheduleLabel: string (required)
+//   - genericName: string (optional)
+//   - points, frequencyPerDay, takenToday, skippedToday, streak, colorIndex: number (optional)
+//   - doseTimeMinutes: list of numbers (optional)
+//   - lastTaken: number (optional, seconds since 2001-01-01 reference date)
+//   - isMuted: bool (optional)
+// Written by MedicationManager (add/update/remove and the taken/skipped
+// flows) - see .claude/rules/firestore.md.
+//
 // Collection: users/{userId}/sharedPeople/{personId}
 // Document ID: personId (UUID string, matches SharedPerson.id)
 // Fields:
@@ -158,6 +171,35 @@ service cloud.firestore {
               (request.resource.data.settings is map && isValidUserSettings()));
     }
 
+    function isValidMedicationDoc() {
+      return hasOnlyAllowedFields(['id', 'name', 'genericName', 'type', 'emoji', 'dosage', 'scheduleLabel', 'points', 'frequencyPerDay', 'doseTimeMinutes', 'takenToday', 'skippedToday', 'lastTaken', 'streak', 'colorIndex', 'isMuted']) &&
+             hasRequiredFields(['id', 'name', 'type', 'emoji', 'dosage', 'scheduleLabel']) &&
+             request.resource.data.id is string &&
+             request.resource.data.id.size() <= 100 &&
+             request.resource.data.name is string &&
+             request.resource.data.name.size() <= 200 &&
+             request.resource.data.type is string &&
+             request.resource.data.type.size() <= 50 &&
+             request.resource.data.emoji is string &&
+             request.resource.data.emoji.size() <= 10 &&
+             request.resource.data.dosage is string &&
+             request.resource.data.dosage.size() <= 100 &&
+             request.resource.data.scheduleLabel is string &&
+             request.resource.data.scheduleLabel.size() <= 100 &&
+             isValidOptionalString('genericName', 200) &&
+             (!('points' in request.resource.data) || request.resource.data.points is number) &&
+             (!('frequencyPerDay' in request.resource.data) || request.resource.data.frequencyPerDay is number) &&
+             (!('doseTimeMinutes' in request.resource.data) ||
+              (request.resource.data.doseTimeMinutes is list && request.resource.data.doseTimeMinutes.size() <= 24)) &&
+             (!('takenToday' in request.resource.data) || request.resource.data.takenToday is number) &&
+             (!('skippedToday' in request.resource.data) || request.resource.data.skippedToday is number) &&
+             (!('lastTaken' in request.resource.data) ||
+              request.resource.data.lastTaken == null || request.resource.data.lastTaken is number) &&
+             (!('streak' in request.resource.data) || request.resource.data.streak is number) &&
+             (!('colorIndex' in request.resource.data) || request.resource.data.colorIndex is number) &&
+             (!('isMuted' in request.resource.data) || request.resource.data.isMuted is bool);
+    }
+
     function isValidSharedPerson() {
       return hasOnlyAllowedFields(['id', 'name', 'phoneNumber', 'email', 'dateAdded', 'optInStatus']) &&
              hasRequiredFields(['id', 'name', 'dateAdded']) &&
@@ -207,6 +249,11 @@ service cloud.firestore {
       match /doses/{medicationId} {
         allow read, delete: if isOwner(userId);
         allow create, update: if isOwner(userId) && isValidDosesDoc();
+      }
+
+      match /medications/{medicationId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidMedicationDoc();
       }
 
       match /sharedPeople/{personId} {

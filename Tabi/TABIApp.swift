@@ -35,7 +35,9 @@ struct TABIApp: App {
                 // launch (e.g. reopening after iOS reaps a backgrounded
                 // app) and silently skip the fetch for the whole session.
                 await AuthenticationManager.shared.waitForInitialAuthState()
-                await UserProfileStore.shared.fetchIfNeeded()
+                async let profile: Void = UserProfileStore.shared.fetchIfNeeded()
+                async let medications: Void = MedicationManager.shared.fetchIfNeeded()
+                _ = await (profile, medications)
             }
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)

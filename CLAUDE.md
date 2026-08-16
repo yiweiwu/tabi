@@ -50,6 +50,8 @@ Tabi/
 │   └── Firestore/
 │       ├── CalendarPersistenceManager.swift
 │       ├── UserProfileStore.swift — single owner of `UserProfile` state: in-memory cache + Firestore persistence (the `users/{uid}` doc)
+│       ├── UserProfileRemoteStore.swift — `UserProfileRemoteStore` protocol + `FirestoreUserProfileRemoteStore`; the Firestore boundary UserProfileStore syncs through
+│       ├── MedicationRemoteStore.swift — `MedicationRemoteStore` protocol + `FirestoreMedicationRemoteStore`; the Firestore boundary MedicationManager (in ViewModels/) syncs medications through
 │       ├── MissedDoseAlertService.swift — fans out a missed-dose SMS alert doc per caretaker to Firestore
 │       ├── ConnectionConfirmationService.swift — writes a caretaker-added SMS confirmation doc to Firestore
 │       └── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
