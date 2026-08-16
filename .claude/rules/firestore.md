@@ -2,6 +2,9 @@
 paths:
   - "Tabi/Services/Firestore/**"
   - "Tabi/ViewModels/MedicationManager.swift"
+  - "Tabi/Models/UserProfile.swift"
+  - "Tabi/Views/Profile/**"
+  - "Tabi/Views/Onboarding/**"
   - "firestore.rules"
   - "firestore.indexes.json"
   - "functions/**"
@@ -30,6 +33,15 @@ Stored models: `Medication`, `DoseEntry`, `SharedPerson`, `UserProfile`. Firesto
 - `users/{uid}/doses/{medicationId}` (contains `entries` array)
 - `users/{uid}/sharedPeople/{id}`
 - `users/{uid}` (the profile fields live directly on this document, via `UserProfileStore` — not `MedicationManager`, which only reads it)
+
+## User Profile Data
+
+`UserProfileStore.shared.profile` is the one home for profile data (per the Data ownership rule in root `CLAUDE.md`) — never give a profile field a second local copy that only syncs back on some later "save"/"complete" step. Two real bugs came from violating this:
+
+- `UserSettings.emailAddress` was a dead, always-blank field duplicating a value already available live from `AuthenticationManager.shared.currentUser?.email`. It just sat there unread/unwritten - `Tabi/Views/Profile/ProfileView.swift`'s Settings screen now reads the Auth email directly instead.
+- `OnboardingCoordinator` (`Tabi/Views/Onboarding/OnboardingFlow.swift`) buffered `firstName`/`lastName`/`age`/`selectedGender` in its own local `@Observable` state across the *entire* onboarding flow, only writing them into `UserProfileStore` in `completeOnboarding()` - the very last step. Backgrounding or killing the app anywhere between `ProfileSetupPageView` and the final "Start Using Tabi" tap silently lost whatever the user had typed, since a fresh `OnboardingCoordinator` is created on relaunch. Fixed by syncing to `UserProfileStore` as soon as the user leaves `ProfileSetupPageView` (on Continue, swipe, or Skip - all funnel through `nextPage()`), not just at the end.
+
+A short-lived edit buffer confined to one screen (e.g. `EditProfileSheet`'s `@State` fields, committed to `UserProfileStore` on "Save") is fine. A buffer that spans multiple screens or a multi-step flow is not - sync it at every step, not just the last one.
 
 ## Firestore Gotchas
 

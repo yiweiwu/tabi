@@ -16,7 +16,7 @@ struct ProfileSetupPageView: View {
                 Spacer()
                 Button("Skip") {
                     withAnimation(.easeInOut(duration: 0.3)) {
-                        coordinator.currentPage = .permissions
+                        coordinator.nextPage()
                     }
                 }
                 .foregroundColor(.tabiGray)

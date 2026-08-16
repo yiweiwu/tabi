@@ -806,10 +806,12 @@ struct SettingsView: View {
                 }
 
                 Section("Account") {
-                    TextField("Email Address", text: $profileStore.profile.settings.emailAddress)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    HStack {
+                        Text("Email Address")
+                        Spacer()
+                        Text(AuthenticationManager.shared.currentUser?.email ?? "—")
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 Section("Security") {

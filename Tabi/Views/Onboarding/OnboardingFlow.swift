@@ -38,6 +38,15 @@ class OnboardingCoordinator {
         case .authentication:
             currentPage = .profileSetup
         case .profileSetup:
+            // Persist as soon as the user leaves this page rather than
+            // waiting for completeOnboarding() - otherwise a name typed
+            // here is only ever held in this in-memory coordinator, and
+            // backgrounding/killing the app anywhere before the final
+            // completion page (e.g. mid system permission prompt) silently
+            // loses it, since a fresh OnboardingCoordinator is created next
+            // launch. Mirrors the returning-user load bug fixed in #24, but
+            // for data going the other direction.
+            syncProfileToStore()
             currentPage = .permissions
         case .permissions:
             currentPage = .completion
@@ -72,13 +81,17 @@ class OnboardingCoordinator {
     }
     
     func completeOnboarding() {
+        syncProfileToStore()
+        isOnboardingComplete = true
+    }
+
+    private func syncProfileToStore() {
         var profile = UserProfileStore.shared.profile
         profile.firstName = firstName
         profile.lastName = lastName
         profile.age = age
         profile.gender = selectedGender
         UserProfileStore.shared.profile = profile
-        isOnboardingComplete = true
     }
 }
 
