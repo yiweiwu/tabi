@@ -50,12 +50,13 @@ Tabi/
 │   ├── ConnectionConfirmationService.swift — writes a caretaker-added SMS confirmation doc to Firestore
 │   └── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
 └── Views/
-    ├── Today/    — TodayView, WeekStripHeader, TABIMedicationRow
-    ├── Calendar/ — CalendarView + calendar subcomponents
-    ├── Sharing/  — SharingView
-    ├── Profile/  — ProfileView (incl. SettingsView), PrivacyPolicyView
-    ├── Camera/   — NewMedicationCameraView, CameraView, DetectedMedicationView, AnalysisResultView
-    └── Progress/ — MedicationProgressView, AchievementRow, WeeklyProgressView
+    ├── Today/     — TodayView, WeekStripHeader, TABIMedicationRow
+    ├── Calendar/  — CalendarView + calendar subcomponents
+    ├── Sharing/   — SharingView
+    ├── Profile/   — ProfileView (incl. SettingsView), PrivacyPolicyView
+    ├── Camera/    — NewMedicationCameraView, CameraView, DetectedMedicationView, AnalysisResultView
+    ├── Progress/  — MedicationProgressView, AchievementRow, WeeklyProgressView
+    └── Onboarding/ — OnboardingFlow (coordinator + most pages), SplashPageView, WelcomeToTabiPageView, AuthenticationPageView, ProfileSetupPageView, PermissionsPageView, CompletionPageView
 ```
 
 **Where to add new code:**
