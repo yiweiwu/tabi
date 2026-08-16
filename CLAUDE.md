@@ -43,14 +43,15 @@ Tabi/
 │   │   └── PillVerifier.swift   — pill verification
 │   ├── CameraManager.swift    — AVFoundation singleton + CameraPreviewView + PhotoCaptureDelegate
 │   ├── AuthenticationManager.swift — Firebase Auth singleton (Sign in with Apple + Google)
-│   ├── CalendarPersistenceManager.swift
-│   ├── UserProfileStore.swift — single owner of `UserProfile` state: in-memory cache + Firestore persistence (the `users/{uid}` doc)
 │   ├── MedicationScheduleParser.swift
 │   ├── NotificationScheduler.swift
-│   ├── MissedDoseAlertService.swift — fans out a missed-dose SMS alert doc per caretaker to Firestore
-│   ├── ConnectionConfirmationService.swift — writes a caretaker-added SMS confirmation doc to Firestore
-│   ├── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
-│   └── MedicationTimelineProvider.swift — `MedicationTimelineProviding` protocol + `MockMedicationTimelineProvider`; the seam to swap in a real backend for the Calendar tab later
+│   ├── MedicationTimelineProvider.swift — `MedicationTimelineProviding` protocol + `MockMedicationTimelineProvider`; the seam to swap in a real backend for the Calendar tab later
+│   └── Firestore/
+│       ├── CalendarPersistenceManager.swift
+│       ├── UserProfileStore.swift — single owner of `UserProfile` state: in-memory cache + Firestore persistence (the `users/{uid}` doc)
+│       ├── MissedDoseAlertService.swift — fans out a missed-dose SMS alert doc per caretaker to Firestore
+│       ├── ConnectionConfirmationService.swift — writes a caretaker-added SMS confirmation doc to Firestore
+│       └── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
 └── Views/
     ├── Today/     — TodayView, WeekStripHeader, TABIMedicationRow
     ├── Calendar/  — CalendarView + calendar subcomponents
@@ -68,23 +69,17 @@ Tabi/
 - New ObservableObject that drives a screen → `ViewModels/`
 - Design tokens (colors, spacing) → `DesignSystem.swift`
 
-Firestore data-model conventions (which fields to store, stored models/paths, Firestore-specific gotchas) live in `.claude/rules/firestore.md`, path-scoped to load only when Firestore-touching files are read.
+This root file only carries genuinely project-wide context. Feature-specific conventions live in path-scoped rules that load only when relevant files are read — see [Feature-scoped rules](#feature-scoped-rules) below.
 
 ## Architecture Patterns
 
 ### Singletons
-- `CameraManager.shared` — persists across views so the AVCaptureSession is not torn down on navigation
-- `GeminiService.shared` — Gemini API calls are stateless; singleton is fine
-- `CalendarPersistenceManager.shared`, `NotificationScheduler.shared`
+`CameraManager`, `GeminiService`, `NotificationScheduler`, and the Firestore-backed services are deliberate singletons — don't add a new one without a clear lifecycle reason. Rationale for each lives in its feature's scoped rule.
 
 ### State management
 - `MedicationManager` is the source of truth for medications and game stats, passed down as `@ObservedObject`. Backed by Firestore — use `add(_:)` to add medications, never append directly to `medications`.
 - `CalendarViewModel` exists but is currently unused — `CalendarView` manages its own state directly.
 - Prefer `@ObservedObject` over re-creating ViewModels to avoid state loss
-
-### Two camera flows
-1. **Add a new medication** → `NewMedicationCameraView` → scans a prescription label → `DetectedMedicationView` (confirm info) → saves to `MedicationManager`
-2. **Log a dose** → `CameraView` → photographs the pill → `AnalysisResultView` → records dose in `MedicationManager`
 
 ### Design system
 Always use the semantic colors from `DesignSystem.swift`:
@@ -95,24 +90,11 @@ Always use the semantic colors from `DesignSystem.swift`:
 .tabiBG     // light gray in light mode, black in dark mode
 ```
 
-## Testing
-
-Tests live in `TabiTests/TabiTests.swift` using Swift Testing (`@Suite`, `@Test`, `#expect`).
-
-**Test images** (`Med_Hydrocodone.jpeg`, `Med_Doxycycline.jpeg`) live in the project root and must be added to the **TabiTests target** in Xcode to be accessible at test time.
-
-Current test coverage:
-- `testMedicationDetection` — parameterized OCR accuracy test against known prescription images
-- `testHydrocodoneDetailed` / `testDoxycyclineDetailed` — verbose debug output for each image
-- `testOCRQuality` — confidence score sanity check
-
-When adding a new test image, place it in the project root alongside existing images and add it to the TabiTests target (not the app target).
-
 ## Code Conventions
 
 - **SwiftUI views**: Keep `body` focused. Extract sub-views as separate structs in the same file if they are only used there, or in a new file in the same directory if reused.
-- **Imports**: Only import what the file actually uses. Most view files only need `import SwiftUI`. Camera files need `import AVFoundation`. Analyzer needs `import Vision`.
-- **Concurrency**: Camera and Vision callbacks use completion handlers. Always dispatch UI updates to `DispatchQueue.main.async`.
+- **Imports**: Only import what the file actually uses. Most view files only need `import SwiftUI`.
+- **Concurrency**: Always dispatch UI updates from a completion handler to `DispatchQueue.main.async`.
 - **Error handling**: Never silently swallow an error — no bare `try?`, no fire-and-forget completion handler that ignores its `error` parameter, no empty `catch {}`. At minimum `print()` it. A swallowed error can be indistinguishable from a normal empty result, hiding real bugs (see `.claude/rules/firestore.md` for a concrete case).
 - **Avoid**: Global state beyond the declared singletons. Don't create new singletons without a clear lifecycle reason.
 - **Formatting**: Match the surrounding file's style. No auto-formatting passes that reformat unrelated code.
@@ -134,40 +116,21 @@ plus `MedicationManager.deleteAllLocalData()` implement the account/data
 deletion these documents promise — keep both in sync if the deletion scope
 ever changes.
 
-## Dose Tracking Logic
-
-These invariants must be preserved across any UI change.
-
-### Source of truth
-- `medication.takenTodayCount` — how many doses were taken **today**. Computed from `takenToday` (resets on a new day) and `lastTaken` (guards that `takenToday` only counts for today). Both are persisted in Firestore on `Medication`.
-- `medication.frequencyPerDay` — total doses scheduled per day, set from Gemini OCR at scan time.
-
-### Mid-day medication add
-When a new medication is added mid-day, doses whose scheduled time has already passed are **not** pre-seeded as taken — a dose only becomes `.taken` when the user actually taps Taken. `Medication` is created with `takenToday: 0, lastTaken: nil` regardless of how many scheduled times already passed; the row's `takenButtonState` (`Views/Today/TodayView.swift`) already shows those as `.overdue` (red) rather than `.notStarted`.
-
-For the Calendar view's per-day `DoseEntry` list (`DoseSchedule.buildEntries()` in `Models/DoseModels.swift`), times that already passed on the add day are seeded as `.skipped` rather than `.upcoming` — leaving them `.upcoming` would let the missed-dose check flip them to `.missed` and fire a caretaker SMS alert for a dose that predates when the medication was even added. `.skipped` avoids that false alert while still not showing as `.taken`.
-
-**Example**: twice-daily (8am, 8pm) added at 2pm → 8am shows as overdue (not taken) on the Today row, and as skipped (not taken, no alert) on the Calendar; 8pm still shows as upcoming/remaining.
-
-### Display rules (Today view and Calendar view must agree)
-| State | Today view | Calendar bar |
-|---|---|---|
-| All doses taken today | "All done today" (green) | Checkmark |
-| Some doses taken today | "N of M doses today" | Remaining count (M − N) |
-| Future day | — | Total doses (M) |
-| Past day (medication was active) | — | Checkmark |
-| Medication not yet added on that day | — | Empty/gray |
-
-**Never show the total frequency count for today** — always show the remaining count. Use `frequencyPerDay - takenTodayCount` for today's bar, `frequencyPerDay` for future bars.
-
-### Calendar active-day check
-`WeekCalendarDotGrid` calls `CalendarPersistenceManager.shared.loadAll(forMedicationId:)` to determine if a medication was active on a given day. A day is active only if dose entries exist for it — meaning the medication had already been added by that date. Do **not** use a simple "any day before today" check, as that would incorrectly mark days before the medication was added.
-
 ## Common Gotchas
 
-- `DoseStatus` is a `Codable` enum with associated values — it has custom `encode`/`decode`. Don't add new cases without updating both.
 - `pillColors` is a module-level `let` in `DesignSystem.swift`, not a static member. Access it directly: `pillColors[index]`.
 - `GoogleService-Info.plist` is gitignored — never commit it. Obtain it from a teammate.
 - `PRODUCT_BUNDLE_IDENTIFIER` (the `Tabi` target's build setting) must match `GoogleService-Info.plist`'s `BUNDLE_ID`. Because the plist is gitignored, a mismatch never shows up in a PR diff — a "Verify GoogleService-Info.plist bundle ID" build phase checks this on every build and fails loudly if they diverge. If you change the bundle ID, re-download the plist from the Firebase console for that bundle ID.
-- All outbound SMS goes through `sendSms()` in `functions/index.js`, which appends the AWS toll-free/10DLC-required "Reply STOP to unsubscribe, HELP for help." footer to every message. Don't add that language at a call site (client or function) — it's enforced once, centrally, so it can't be dropped by a future caller.
-- Firestore-specific conventions and gotchas live in `.claude/rules/firestore.md` (path-scoped), not here.
+
+## Feature-scoped rules
+
+Detailed conventions for specific areas live in `.claude/rules/`, loaded automatically only when a matching file is read — see each file's `paths:` frontmatter for exactly what triggers it:
+
+| Rule | Covers |
+|---|---|
+| `.claude/rules/firestore.md` | Data model, stored fields/paths, `firestore.rules` deploy gotchas, outbound SMS footer convention |
+| `.claude/rules/dose-tracking.md` | Today/Calendar invariants, mid-day add behavior, display rules, `DoseStatus` gotcha |
+| `.claude/rules/camera.md` | The two camera flows, `AnalyzeMedication/` pipeline, `CameraManager`/`GeminiService` singletons |
+| `.claude/rules/testing.md` | `TabiTests` conventions and test image setup |
+
+When you touch a large, self-contained topic that doesn't apply to most of the codebase, add a new scoped rule under `.claude/rules/` instead of growing this file. Keep instructions where they're relevant, not where they're convenient to write.
