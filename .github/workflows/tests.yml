@@ -35,9 +35,23 @@ jobs:
           fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
+      # Firebase's SPM dependency graph (Firestore, Auth, gRPC, abseil,
+      # leveldb, nanopb...) is large - without this, every run re-downloads
+      # it from scratch, which is most of why a cold run takes 15-20+
+      # minutes. -clonedSourcePackagesDirPath below gives it a stable path
+      # to cache instead of a random per-run DerivedData location.
+      - name: Cache Swift Package Manager dependencies
+        uses: actions/cache@v4
+        with:
+          path: .spm-cache
+          key: ${{ runner.os }}-spm-${{ hashFiles('Tabi.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
       - name: Run unit tests
         run: |
           xcrun xcodebuild test \
             -scheme Tabi \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -clonedSourcePackagesDirPath .spm-cache \
             -only-testing:TabiTests
