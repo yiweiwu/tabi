@@ -27,22 +27,12 @@ struct WelcomeToTabiPageView: View {
 
             // App Logo/Icon
             VStack(spacing: 20) {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.tabiOrange, Color.tabiLavender],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                Image("app-logo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: 120, height: 120)
-                    .overlay(
-                        Image(systemName: "pills.fill")
-                            .font(.system(size: 50))
-                            .foregroundColor(.white)
-                    )
                     .shadow(color: Color.tabiOrange.opacity(0.3), radius: 20, x: 0, y: 10)
-                
+
                 Text("Welcome to Tabi")
                     .font(.system(size: 32, weight: .bold))
                     .foregroundColor(.primary)
