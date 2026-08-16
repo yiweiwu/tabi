@@ -15,67 +15,32 @@ struct AuthenticationPageView: View {
     @State private var showingPrivacyPolicy = false
     @State private var fullName = ""
     @State private var email = ""
-    @State private var password = ""
-    
+
     var body: some View {
         ZStack {
             Color.tabiBG.ignoresSafeArea()
-            
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Header with Tabi logo and title
-                    VStack(spacing: 12) {
+
+            VStack(spacing: 16) {
+                    // Header
+                    VStack(spacing: 8) {
                         Image(systemName: "pills.fill")
-                            .font(.system(size: 30))
+                            .font(.system(size: 26))
                             .foregroundColor(.tabiLavender)
-                        
-                        Text("Tabi")
-                            .font(.title.bold())
+
+                        Text("Sign up")
+                            .font(.title2.bold())
                             .foregroundColor(.primary)
                     }
-                    .padding(.top, 60)
-                    
-                    // Social Login Buttons
-                    VStack(spacing: 12) {
-                        // Continue with Google
-                        SocialLoginButton(
-                            icon: "g.circle.fill",
-                            title: "Continue with Google",
-                            iconColor: .red
-                        ) {
-                            Task { await handleGoogleSignIn() }
-                        }
-                        .disabled(isSigningIn)
-                        
-                        // Continue with Facebook
-                        SocialLoginButton(
-                            icon: "f.circle.fill",
-                            title: "Continue with Facebook",
-                            iconColor: Color(red: 0.23, green: 0.35, blue: 0.60)
-                        ) {
-                            handleFacebookSignIn()
-                        }
-                        
-                        // Continue with Apple
-                        SocialLoginButton(
-                            icon: "apple.logo",
-                            title: "Continue with Apple",
-                            iconColor: .black
-                        ) {
-                            handleSignInWithApple()
-                        }
-                        .disabled(isSigningIn)
-                    }
-                    .padding(.horizontal, 32)
-                    
+                    .padding(.top, 20)
+
                     // Form Fields
-                    VStack(spacing: 16) {
-                        // User name section
+                    VStack(spacing: 12) {
+                        // Name section
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("User name")
+                            Text("Name")
                                 .font(.subheadline)
                                 .foregroundColor(.primary)
-                            
+
                             HStack {
                                 Image(systemName: "person")
                                     .foregroundColor(.tabiGray)
@@ -89,7 +54,8 @@ struct AuthenticationPageView: View {
                                         coordinator.lastName = parts.dropFirst().joined(separator: " ")
                                     }
                             }
-                            .padding()
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 14)
                             .background(Color.tabiCard)
                             .cornerRadius(12)
                             .overlay(
@@ -97,13 +63,13 @@ struct AuthenticationPageView: View {
                                     .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                             )
                         }
-                        
+
                         // Email section
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Email")
                                 .font(.subheadline)
                                 .foregroundColor(.primary)
-                            
+
                             HStack {
                                 Image(systemName: "envelope")
                                     .foregroundColor(.tabiGray)
@@ -112,35 +78,8 @@ struct AuthenticationPageView: View {
                                     .keyboardType(.emailAddress)
                                     .autocapitalization(.none)
                             }
-                            .padding()
-                            .background(Color.tabiCard)
-                            .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                            )
-                        }
-                        
-                        // Password section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Password")
-                                .font(.subheadline)
-                                .foregroundColor(.primary)
-                            
-                            HStack {
-                                Image(systemName: "lock")
-                                    .foregroundColor(.tabiGray)
-                                SecureField("Password", text: $password)
-                                    .textContentType(.newPassword)
-                                
-                                Button(action: {
-                                    // Toggle password visibility
-                                }) {
-                                    Image(systemName: "eye")
-                                        .foregroundColor(.tabiGray)
-                                }
-                            }
-                            .padding()
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 14)
                             .background(Color.tabiCard)
                             .cornerRadius(12)
                             .overlay(
@@ -151,7 +90,7 @@ struct AuthenticationPageView: View {
                     }
                     .padding(.horizontal, 32)
                     .padding(.top, 8)
-                    
+
                     // Continue Button (smaller, centered)
                     HStack {
                         Spacer()
@@ -172,7 +111,54 @@ struct AuthenticationPageView: View {
                         }
                         Spacer()
                     }
-                    .padding(.top, 12)
+                    .padding(.top, 4)
+
+                    // "or" divider
+                    HStack(spacing: 12) {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.25))
+                            .frame(height: 1)
+                        Text("or")
+                            .font(.footnote)
+                            .foregroundColor(.tabiGray)
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.25))
+                            .frame(height: 1)
+                    }
+                    .padding(.horizontal, 32)
+
+                    // Social Login Buttons
+                    VStack(spacing: 12) {
+                        // Continue with Google
+                        SocialLoginButton(
+                            icon: "g.circle.fill",
+                            title: "Continue with Google",
+                            iconColor: .red
+                        ) {
+                            Task { await handleGoogleSignIn() }
+                        }
+                        .disabled(isSigningIn)
+
+                        // Continue with Apple
+                        SocialLoginButton(
+                            icon: "apple.logo",
+                            title: "Continue with Apple",
+                            iconColor: .black
+                        ) {
+                            handleSignInWithApple()
+                        }
+                        .disabled(isSigningIn)
+
+                        // Continue with Facebook
+                        SocialLoginButton(
+                            icon: "f.circle.fill",
+                            title: "Continue with Facebook",
+                            iconColor: Color(red: 0.23, green: 0.35, blue: 0.60)
+                        ) {
+                            handleFacebookSignIn()
+                        }
+                    }
+                    .padding(.horizontal, 32)
 
                     // Terms & Privacy disclosure — one Button around a
                     // concatenated Text so the sentence wraps as a single
@@ -191,25 +177,24 @@ struct AuthenticationPageView: View {
                         .multilineTextAlignment(.center)
                     }
                     .padding(.horizontal, 32)
-                    .padding(.top, 12)
+                    .padding(.top, 8)
 
                     // Sign in link
                     HStack(spacing: 4) {
                         Text("Do you have account?")
                             .font(.subheadline)
                             .foregroundColor(.tabiGray)
-                        
+
                         Button("Sign in") {
                             // Handle sign in
                         }
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.tabiLavender)
                     }
-                    .padding(.top, 8)
-                    .padding(.bottom, 40)
-                }
+                    .padding(.top, 4)
+                    .padding(.bottom, 16)
             }
-            
+
             // Skip button overlay
             VStack {
                 HStack {
@@ -395,7 +380,8 @@ struct SocialLoginButton: View {
                 
                 Spacer()
             }
-            .padding()
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
             .background(Color.tabiCard)
             .cornerRadius(12)
             .overlay(
