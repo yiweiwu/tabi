@@ -3,6 +3,13 @@ import Foundation
 // MARK: - Medication Schedule Parser
 
 class MedicationScheduleParser {
+    // How far ahead `DoseEntry` documents are materialized from a single
+    // schedule() call. Shared with CalendarStore's rolling extension
+    // (.claude/rules/dose-tracking.md) so both sides agree on what "the
+    // window" means - add/edit time and the periodic keep-alive both grow
+    // the window by the same amount.
+    static let scheduleWindowDays = 30
+
     static func parse(info: DetectedMedicationInfo, medication: Medication) -> DoseSchedule {
         schedule(for: medication, dosage: info.dosage)
     }
@@ -11,7 +18,7 @@ class MedicationScheduleParser {
     // schedule (via EditMedicationView) and a freshly-added one go through
     // the same path and stay in sync with `medication.doseTimeMinutes`.
     static func schedule(for medication: Medication, dosage: String) -> DoseSchedule {
-        let endDate = Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date()
+        let endDate = Calendar.current.date(byAdding: .day, value: scheduleWindowDays, to: Date()) ?? Date()
         return DoseSchedule(
             medicationId: medication.id, medicationName: medication.name,
             medicationEmoji: medication.emoji, dosage: dosage,

@@ -7,13 +7,15 @@ enum CalendarViewMode {
 }
 
 struct CalendarView: View {
-    // Defaults to the mock provider - pass a real-backend-conforming type in
-    // once one exists, no other change needed here or in the grid views.
-    var provider: MedicationTimelineProviding = MockMedicationTimelineProvider()
+    // Firestore-backed, like TodayView/WeeklyProgressView - held as
+    // @ObservedObject so this view re-renders when CalendarStore's listeners
+    // push updates, rather than reaching into `.shared` from inside body.
+    @ObservedObject private var medicationStore = MedicationStore.shared
+    @ObservedObject private var calendarStore = CalendarStore.shared
     @State private var currentDate = Date()
     @State private var viewMode: CalendarViewMode = .week
 
-    private var medications: [ScheduledMedication] { provider.fetchMedications() }
+    private var medications: [Medication] { medicationStore.medications }
 
     var body: some View {
         NavigationView {
@@ -59,9 +61,9 @@ struct CalendarView: View {
                     VStack(spacing: 16) {
                         switch viewMode {
                         case .week:
-                            WeekTimelineView(medications: medications, currentDate: currentDate)
+                            WeekTimelineView(medications: medications, entriesByMedicationId: calendarStore.entriesByMedicationId, currentDate: currentDate)
                         case .month:
-                            MonthTimelineView(medications: medications, currentDate: currentDate)
+                            MonthTimelineView(medications: medications, entriesByMedicationId: calendarStore.entriesByMedicationId, currentDate: currentDate)
                         }
                     }
                     .padding(.bottom, 32)
@@ -147,7 +149,8 @@ struct CalendarView: View {
 // MARK: - Week Timeline View
 
 struct WeekTimelineView: View {
-    let medications: [ScheduledMedication]
+    let medications: [Medication]
+    let entriesByMedicationId: [UUID: [DoseEntry]]
     let currentDate: Date
 
     private var weekDays: [Date] {
@@ -158,37 +161,29 @@ struct WeekTimelineView: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            WeekCalendarDotGrid(medications: medications, weekDays: weekDays)
-                .padding(.horizontal, 16)
-
-            RefillReminderCard(medications: medications)
-                .padding(.horizontal, 16)
-        }
+        WeekCalendarDotGrid(medications: medications, entriesByMedicationId: entriesByMedicationId, weekDays: weekDays)
+            .padding(.horizontal, 16)
     }
 }
 
 // MARK: - Month Timeline View
 
 struct MonthTimelineView: View {
-    let medications: [ScheduledMedication]
+    let medications: [Medication]
+    let entriesByMedicationId: [UUID: [DoseEntry]]
     let currentDate: Date
 
     var body: some View {
-        VStack(spacing: 16) {
-            MonthCalendarGrid(medications: medications, monthDate: currentDate)
-                .padding(.horizontal, 16)
-
-            RefillReminderCard(medications: medications)
-                .padding(.horizontal, 16)
-        }
+        MonthCalendarGrid(medications: medications, entriesByMedicationId: entriesByMedicationId, monthDate: currentDate)
+            .padding(.horizontal, 16)
     }
 }
 
 // MARK: - Week Calendar Dot Grid
 
 struct WeekCalendarDotGrid: View {
-    let medications: [ScheduledMedication]
+    let medications: [Medication]
+    let entriesByMedicationId: [UUID: [DoseEntry]]
     let weekDays: [Date]
 
     var body: some View {
@@ -266,14 +261,14 @@ struct WeekCalendarDotGrid: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func medicationRow(for medication: ScheduledMedication) -> some View {
+    private func medicationRow(for medication: Medication) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(medication.name)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
-                Text(medication.subtitleText)
+                Text("\(medication.dosage), \(medication.scheduleLabel)")
                     .font(.caption)
                     .foregroundColor(.tabiGray)
                     .lineLimit(1)
@@ -290,8 +285,8 @@ struct WeekCalendarDotGrid: View {
         .padding(.vertical, 10)
     }
 
-    private func dayDot(for medication: ScheduledMedication, on day: Date) -> some View {
-        let status = medication.doseStatus(on: day, today: Date())
+    private func dayDot(for medication: Medication, on day: Date) -> some View {
+        let status = doseDotStatus(for: medication.id, on: day, entriesByMedicationId: entriesByMedicationId)
         let isToday = Calendar.current.isDateInToday(day)
 
         return ZStack {
@@ -320,7 +315,6 @@ struct WeekCalendarDotGrid: View {
             Spacer(minLength: 0)
             legendItem(color: .tabiGreen, label: "Taken")
             legendItem(color: .tabiRed, label: "Missed")
-            legendItem(color: .black, label: "Scheduled")
             Spacer(minLength: 0)
         }
     }
@@ -338,7 +332,8 @@ struct WeekCalendarDotGrid: View {
 // MARK: - Month Calendar Grid
 
 struct MonthCalendarGrid: View {
-    let medications: [ScheduledMedication]
+    let medications: [Medication]
+    let entriesByMedicationId: [UUID: [DoseEntry]]
     let monthDate: Date
 
     private let calendar = Calendar.current
@@ -413,13 +408,13 @@ struct MonthCalendarGrid: View {
                 Circle()
                     .fill(status.color)
                     .frame(width: 6, height: 6)
-            } else if !isCurrentMonth {
-                // Faint decorative marker for adjacent-month padding days -
-                // these aren't part of "active medications" for this month.
-                Circle()
-                    .fill(Color.tabiRed.opacity(0.12))
-                    .frame(width: 6, height: 6)
             } else {
+                // Adjacent-month padding days and current-month days with
+                // nothing resolved yet both get an invisible placeholder,
+                // just to keep every cell the same height - not a red dot,
+                // which would misread as a missed dose (see the bug this
+                // replaced: a faint Color.tabiRed marker on padding days
+                // that looked identical to a real missed-dose indicator).
                 Circle()
                     .fill(Color.clear)
                     .frame(width: 6, height: 6)
@@ -429,7 +424,7 @@ struct MonthCalendarGrid: View {
     }
 
     private func monthDayStatus(for day: Date) -> DoseDotStatus? {
-        let statuses = medications.compactMap { $0.doseStatus(on: day, today: Date()) }
+        let statuses = medications.compactMap { doseDotStatus(for: $0.id, on: day, entriesByMedicationId: entriesByMedicationId) }
         return aggregateDoseStatus(statuses)
     }
 
@@ -438,7 +433,6 @@ struct MonthCalendarGrid: View {
             Spacer(minLength: 0)
             legendItem(color: .tabiGreen, label: "All taken")
             legendItem(color: .tabiRed, label: "Missed a dose")
-            legendItem(color: .black, label: "Scheduled")
             Spacer(minLength: 0)
         }
     }
@@ -450,141 +444,5 @@ struct MonthCalendarGrid: View {
                 .font(.caption)
                 .foregroundColor(.tabiGray)
         }
-    }
-}
-
-// MARK: - Refill Reminder Card
-
-struct RefillReminderCard: View {
-    let medications: [ScheduledMedication]
-    @State private var showingDetail = false
-
-    private var lowSupplyMedications: [ScheduledMedication] {
-        medications.filter(\.isLowSupply).sorted { $0.daysOfSupplyRemaining < $1.daysOfSupplyRemaining }
-    }
-
-    var body: some View {
-        if !lowSupplyMedications.isEmpty {
-            Button {
-                showingDetail = true
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Refill needed soon")
-                            .font(.title3.bold())
-                            .foregroundColor(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.bold())
-                            .foregroundColor(.tabiGray)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .padding(.bottom, 8)
-
-                    VStack(spacing: 0) {
-                        ForEach(Array(lowSupplyMedications.enumerated()), id: \.element.id) { index, medication in
-                            HStack(spacing: 12) {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(medication.pillColor)
-                                    .frame(width: 3, height: 36)
-
-                                Text(medication.name)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.primary)
-
-                                Spacer()
-
-                                Text("\(medication.daysOfSupplyRemaining) \(medication.daysOfSupplyRemaining == 1 ? "day" : "days") left")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.tabiRed)
-                            }
-                            .padding(.vertical, 10)
-
-                            if index < lowSupplyMedications.count - 1 {
-                                Divider()
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                }
-            }
-            .buttonStyle(.plain)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.tabiCard)
-                    .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 2)
-            )
-            .sheet(isPresented: $showingDetail) {
-                RefillDetailSheet(medications: lowSupplyMedications)
-            }
-        }
-    }
-}
-
-// MARK: - Refill Detail Sheet
-
-struct RefillDetailSheet: View {
-    let medications: [ScheduledMedication]
-    @Environment(\.dismiss) private var dismiss
-
-    // Grouped by pharmacy rather than one shared contact block - different
-    // medications are often filled at different pharmacies, and grouping is
-    // what actually answers "where do I need to call/go" when there's more
-    // than one. Groups are ordered by their most urgent medication first.
-    private var groupedByPharmacy: [(pharmacy: MedicationPharmacy, medications: [ScheduledMedication])] {
-        Dictionary(grouping: medications, by: \.pharmacy)
-            .map { pharmacy, meds in
-                (pharmacy: pharmacy, medications: meds.sorted { $0.daysOfSupplyRemaining < $1.daysOfSupplyRemaining })
-            }
-            .sorted { ($0.medications.first?.daysOfSupplyRemaining ?? .max) < ($1.medications.first?.daysOfSupplyRemaining ?? .max) }
-    }
-
-    var body: some View {
-        NavigationView {
-            List {
-                ForEach(groupedByPharmacy, id: \.pharmacy.id) { group in
-                    Section {
-                        ForEach(group.medications) { medication in
-                            HStack(spacing: 12) {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(medication.pillColor)
-                                    .frame(width: 3, height: 36)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(medication.name)
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(medication.subtitleText)
-                                        .font(.caption)
-                                        .foregroundColor(.tabiGray)
-                                }
-
-                                Spacer()
-
-                                Text("\(medication.daysOfSupplyRemaining) \(medication.daysOfSupplyRemaining == 1 ? "day" : "days") left")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.tabiRed)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    } header: {
-                        Text(group.pharmacy.name)
-                    } footer: {
-                        // Placeholder until real pharmacy integration exists
-                        // - see PharmaciesView for the user's saved pharmacies.
-                        Text("\(group.pharmacy.address) · \(group.pharmacy.phone)")
-                    }
-                }
-            }
-            .navigationTitle("Refill Reminders")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
     }
 }
