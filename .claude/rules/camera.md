@@ -8,10 +8,10 @@ paths:
 # Camera & Label/Pill Analysis
 
 ## Two camera flows
-1. **Add a new medication** → `NewMedicationCameraView` → scans a prescription label → `DetectedMedicationView` (confirm info) → saves to `MedicationManager`
-2. **Log a dose** → `CameraView` → photographs the pill → `AnalysisResultView` → records dose in `MedicationManager`
+1. **Add a new medication** → `NewMedicationCameraView` → scans a prescription label → `DetectedMedicationView` (confirm info) → saves to `MedicationStore`
+2. **Log a dose** → `CameraView` → photographs the pill → `AnalysisResultView` → records dose in `MedicationStore`
 
-Don't conflate these — they use different underlying analysis (`AnalyzeMedication/` pipeline for labels, pill verification for dose logging) and write to `MedicationManager` differently (`add(_:)` vs `recordMedicationTaken(_:points:)`).
+Don't conflate these — they use different underlying analysis (`AnalyzeMedication/` pipeline for labels, pill verification for dose logging) and write to `MedicationStore` differently (`add(_:)` vs `recordMedicationTaken(_:points:)`).
 
 ## AnalyzeMedication pipeline
 `Services/AnalyzeMedication/` is a tight 3-file pipeline used together for prescription label scanning:

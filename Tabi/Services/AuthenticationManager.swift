@@ -146,7 +146,8 @@ class AuthenticationManager {
         try await deleteAllDocuments(in: db.collection("users").document(uid).collection("medications"))
         try await db.collection("users").document(uid).delete()
         UserProfileStore.shared.reset()
-        MedicationManager.shared.deleteAllLocalData()
+        MedicationStore.shared.deleteAllLocalData()
+        SharedPeopleStore.shared.reset()
         try await user.delete()
     }
 

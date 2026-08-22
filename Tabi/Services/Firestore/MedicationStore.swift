@@ -1,24 +1,18 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Medication Manager
+// MARK: - Medication Store
 
 // Single owner of medication state: an in-memory cache backed by Firestore,
 // mirroring UserProfileStore's pattern exactly (see
 // fetchIfNeeded()/performFetch(uid:) below). A singleton (like
 // UserProfileStore), passed down as @ObservedObject from ContentView rather
 // than recreated.
-class MedicationManager: ObservableObject {
-    static let shared = MedicationManager()
+class MedicationStore: ObservableObject, FirestoreCacheStore {
+    static let shared = MedicationStore()
 
     @Published var medications: [Medication] = []
     @Published var gameStats = GameStats()
-
-    // Read-only: UserProfileStore owns profile state (in-memory cache +
-    // Firestore persistence). MedicationManager never fetches, caches, or
-    // writes profile data itself - views that need to edit the profile
-    // observe UserProfileStore directly (see ProfileView).
-    var userProfile: UserProfile { UserProfileStore.shared.profile }
 
     private let userDefaults: UserDefaults
     // UserDefaults was medications' only storage before Firestore-backed
@@ -45,16 +39,8 @@ class MedicationManager: ObservableObject {
     // decision separate from the Firestore I/O below - mirrors
     // UserProfileStore.decideFetch for the same reason (testable without
     // live Firebase).
-    enum FetchDecision: Equatable {
-        case skipAlreadyFetched
-        case skipNoSignedInUser
-        case fetch(uid: String)
-    }
-
-    static func decideFetch(hasFetched: Bool, uid: String?) -> FetchDecision {
-        guard !hasFetched else { return .skipAlreadyFetched }
-        guard let uid else { return .skipNoSignedInUser }
-        return .fetch(uid: uid)
+    static func decideFetch(hasFetched: Bool, uid: String?) -> FirestoreFetchDecision {
+        decideFirestoreFetch(hasFetched: hasFetched, uid: uid)
     }
 
     // One-shot fetch into the in-memory cache, called from TABIApp's launch
@@ -64,7 +50,7 @@ class MedicationManager: ObservableObject {
         case .skipAlreadyFetched:
             return
         case .skipNoSignedInUser:
-            print("MedicationManager: skipping fetch - no signed-in user")
+            print("MedicationStore: skipping fetch - no signed-in user")
         case .fetch(let uid):
             hasFetched = true
             await performFetch(uid: uid)
@@ -79,7 +65,7 @@ class MedicationManager: ObservableObject {
         do {
             remote = try await remoteStore.fetchMedications(uid: uid)
         } catch {
-            print("MedicationManager: failed to fetch medications - \(error.localizedDescription)")
+            print("MedicationStore: failed to fetch medications - \(error.localizedDescription)")
             return
         }
 
@@ -141,7 +127,7 @@ class MedicationManager: ObservableObject {
             try await remoteStore.saveMedication(uid: uid, medication: medication)
             return true
         } catch {
-            print("MedicationManager: failed to save medication - \(error.localizedDescription)")
+            print("MedicationStore: failed to save medication - \(error.localizedDescription)")
             return false
         }
     }
@@ -151,7 +137,7 @@ class MedicationManager: ObservableObject {
         do {
             try await remoteStore.deleteMedication(uid: uid, medicationId: medication.id)
         } catch {
-            print("MedicationManager: failed to delete medication - \(error.localizedDescription)")
+            print("MedicationStore: failed to delete medication - \(error.localizedDescription)")
         }
     }
 
@@ -176,10 +162,6 @@ class MedicationManager: ObservableObject {
         let schedule = MedicationScheduleParser.schedule(for: medication, dosage: medication.dosage)
         CalendarPersistenceManager.shared.save(schedule: schedule)
         NotificationScheduler.shared.schedule(for: schedule)
-    }
-
-    func startMissedDoseMonitoring() {
-        CalendarPersistenceManager.shared.startMonitoring { [weak self] in self?.medications ?? [] }
     }
 
     func remove(_ medication: Medication) {
@@ -266,7 +248,7 @@ class MedicationManager: ObservableObject {
     // Clears everything stored on-device. Firestore-backed data (doses,
     // sharedPeople, medications, the profile doc) is deleted separately via
     // AuthenticationManager.deleteAccountAndAllData() - this only covers
-    // what MedicationManager itself owns locally. Resets hasFetched so a
+    // what MedicationStore itself owns locally. Resets hasFetched so a
     // subsequent sign-in in the same app session doesn't show stale
     // medications.
     func deleteAllLocalData() {
@@ -274,6 +256,13 @@ class MedicationManager: ObservableObject {
         medications = []
         userDefaults.removeObject(forKey: Self.legacyMedicationsKey)
         gameStats = GameStats()
+        hasFetched = false
+    }
+
+    // Required by FirestoreCacheStore, but nothing currently calls it -
+    // medications are only ever mutated by this same client's own writes, so
+    // there's no external source of staleness to force a re-check against.
+    func invalidate() {
         hasFetched = false
     }
 }

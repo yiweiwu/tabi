@@ -10,7 +10,7 @@ private let kIsSimulator = false
 
 struct CameraView: View {
     let medication: Medication
-    @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject var medicationManager: MedicationStore
     @Binding var isPresented: Bool
     @State private var showingAnalysis = false
     @State private var capturedImage: UIImage?

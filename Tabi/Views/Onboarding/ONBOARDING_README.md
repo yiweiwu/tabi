@@ -105,7 +105,7 @@ the single owner of profile state for the rest of the app:
 - A write-through save on every mutation, persisted to the `users/{uid}`
   document in Firestore (see `firestore.rules`).
 
-Because `ContentView`'s `MedicationManager` is created fresh only after
+Because `ContentView`'s `MedicationStore` is created fresh only after
 `hasCompletedOnboarding` flips true, and reads from the same
 `UserProfileStore` singleton, the onboarding flow and the main app's Profile
 tab now share one data source instead of two disconnected copies. There's no

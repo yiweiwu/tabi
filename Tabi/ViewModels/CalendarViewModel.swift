@@ -34,7 +34,7 @@ class CalendarViewModel: ObservableObject {
         let days = range.compactMap { cal.date(byAdding: .day, value: $0 - 1, to: first) as Date? }
         return nils + days
     }
-    func recordTaken(entry: DoseEntry, medicationManager: MedicationManager) {
+    func recordTaken(entry: DoseEntry, medicationManager: MedicationStore) {
         p.updateStatus(entryId: entry.id, medicationId: entry.medicationId, status: .taken(Date()))
         if let med = medicationManager.medications.first(where: { $0.id == entry.medicationId }) { medicationManager.recordMedicationTaken(med, points: med.points) }
         refreshDay(medications: medicationManager.medications); load(medications: medicationManager.medications)

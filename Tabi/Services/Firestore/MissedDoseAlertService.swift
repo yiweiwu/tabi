@@ -12,24 +12,29 @@ class MissedDoseAlertService {
     static let shared = MissedDoseAlertService()
     private init() {}
 
+    // Calls SharedPeopleStore.refresh() (force re-fetch) rather than
+    // fetchIfNeeded() - a caretaker's optInStatus can flip server-side, so
+    // whatever the cache held from app launch might be stale by the time a
+    // dose actually goes missed.
     func sendAlert(for entry: DoseEntry) {
-        guard let userId = AuthenticationManager.shared.uid else { return }
-        Firestore.firestore().collection("users").document(userId).collection("sharedPeople")
-            .getDocuments { snapshot, _ in
-                let phones = (snapshot?.documents ?? [])
-                    .compactMap { SharedPerson.decoded(from: $0.data()) }
-                    .filter { $0.isEligibleForMissedDoseAlerts }
-                    .compactMap { $0.phoneNumber }
-                guard !phones.isEmpty else { return }
+        Task {
+            await SharedPeopleStore.shared.refresh()
+            let phones = SharedPeopleStore.shared.sharedPeople
+                .filter { $0.isEligibleForMissedDoseAlerts }
+                .compactMap { $0.phoneNumber }
+            guard !phones.isEmpty else { return }
 
-                let alerts = Firestore.firestore().collection("missed_pill_alerts")
-                for phone in phones {
-                    let alert = MissedPillAlert(caretakerPhone: phone, medicationName: entry.medicationName, scheduledDate: entry.scheduledDate)
-                    if let dict = alert.firestoreDict() {
-                        alerts.addDocument(data: dict)
-                    }
+            let alerts = Firestore.firestore().collection("missed_pill_alerts")
+            for phone in phones {
+                let alert = MissedPillAlert(caretakerPhone: phone, medicationName: entry.medicationName, scheduledDate: entry.scheduledDate)
+                guard let dict = alert.firestoreDict() else { continue }
+                do {
+                    try await alerts.addDocument(data: dict)
+                } catch {
+                    print("MissedDoseAlertService: failed to write alert for \(phone) - \(error.localizedDescription)")
                 }
             }
+        }
     }
 }
 

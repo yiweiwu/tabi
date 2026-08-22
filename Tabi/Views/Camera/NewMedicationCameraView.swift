@@ -15,7 +15,7 @@ private let kNewMedIsSimulator = false
 #endif
 
 struct NewMedicationCameraView: View {
-    @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject var medicationManager: MedicationStore
     @Binding var isPresented: Bool
     @ObservedObject private var cameraManager = CameraManager.shared
     @State private var captureResult: CaptureResult?

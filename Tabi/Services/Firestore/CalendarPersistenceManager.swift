@@ -3,18 +3,74 @@ import FirebaseFirestore
 
 // MARK: - Calendar Persistence Manager
 
-class CalendarPersistenceManager {
+// Single owner of dose-schedule state: an in-memory cache backed by
+// Firestore through CalendarRemoteStore, conforming to FirestoreCacheStore
+// like UserProfileStore/MedicationStore/SharedPeopleStore - but "fetch"
+// means "subscribe" here rather than a one-shot read. Dose entries are
+// stored one document per medication, so instead of a single uid-scoped
+// fetch, fetchIfNeeded() starts a live Firestore listener per medication
+// currently known to MedicationStore, plus the recurring missed-dose
+// check. New medications added later get their listener started directly by
+// save(schedule:) (called from MedicationStore.update(_:)), not by
+// re-running fetchIfNeeded().
+//
+// @Published (not a plain cache dictionary) so views observe changes
+// directly - see TodayView/WeeklyProgressView, which hold this as
+// @ObservedObject rather than reaching into CalendarPersistenceManager.shared
+// from inside their body and hoping some unrelated state change triggers a
+// re-render.
+final class CalendarPersistenceManager: ObservableObject, FirestoreCacheStore {
     static let shared = CalendarPersistenceManager()
-    private let db = Firestore.firestore()
-    private var cache: [UUID: [DoseEntry]] = [:]
+    @Published private(set) var entriesByMedicationId: [UUID: [DoseEntry]] = [:]
     private var listeners: [UUID: ListenerRegistration] = [:]
-    private init() {}
+    private var missedCheckTimer: Timer?
+    private var hasFetched = false
+    private let remoteStore: CalendarRemoteStore
 
-    // Requires a signed-in user - no anonymous/device-ID fallback, since that
-    // would reintroduce unscoped access to another installation's data.
-    private func docRef(for id: UUID) -> DocumentReference? {
-        guard let userId = AuthenticationManager.shared.uid else { return nil }
-        return db.collection("users").document(userId).collection("doses").document(id.uuidString)
+    // Not private: `.shared` is still the only instance the app itself
+    // constructs (always with the real Firestore-backed remoteStore), but
+    // tests need an isolated fake to exercise save(schedule:)/updateStatus
+    // without live Firebase.
+    init(remoteStore: CalendarRemoteStore = FirestoreCalendarRemoteStore()) {
+        self.remoteStore = remoteStore
+    }
+
+    static func decideFetch(hasFetched: Bool, uid: String?) -> FirestoreFetchDecision {
+        decideFirestoreFetch(hasFetched: hasFetched, uid: uid)
+    }
+
+    // Starts a listener for every medication MedicationStore currently
+    // knows about, plus the recurring missed-dose check - once per sign-in.
+    // Must run after MedicationStore.fetchIfNeeded() has populated
+    // `medications` (see TABIApp's launch task); this store doesn't fetch
+    // medications itself.
+    func fetchIfNeeded() async {
+        switch Self.decideFetch(hasFetched: hasFetched, uid: AuthenticationManager.shared.uid) {
+        case .skipAlreadyFetched:
+            return
+        case .skipNoSignedInUser:
+            print("CalendarPersistenceManager: skipping fetch - no signed-in user")
+        case .fetch:
+            hasFetched = true
+            startMonitoringCurrentMedications()
+        }
+    }
+
+    func invalidate() {
+        hasFetched = false
+    }
+
+    private func startMonitoringCurrentMedications() {
+        for med in MedicationStore.shared.medications { startListening(for: med.id) }
+        missedCheckTimer?.invalidate()
+        // Re-scans every minute to catch doses that go overdue while the app
+        // sits open with no other Firestore write to trigger a snapshot
+        // listener. Reads MedicationStore.shared.medications live on each
+        // tick (rather than a snapshot captured here) so medications added
+        // after this fires are still covered.
+        missedCheckTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.markMissedIfOverdue(medications: MedicationStore.shared.medications)
+        }
     }
 
     func save(schedule: DoseSchedule) {
@@ -26,7 +82,7 @@ class CalendarPersistenceManager {
     }
 
     func loadAll(forMedicationId id: UUID) -> [DoseEntry] {
-        cache[id] ?? []
+        entriesByMedicationId[id] ?? []
     }
 
     func loadEntries(forMonth date: Date, medications: [Medication]) -> [DoseEntry] {
@@ -58,51 +114,24 @@ class CalendarPersistenceManager {
         for entry in newlyMissed { MissedDoseAlertService.shared.sendAlert(for: entry) }
     }
 
-    // MARK: - Missed Dose Monitoring
-
-    private var missedCheckTimer: Timer?
-    private var medicationsProvider: (() -> [Medication])?
-
-    // Starts listening for every medication (so a cold launch picks up doses
-    // that went overdue while the app was closed) and re-scans every minute
-    // to catch doses that go overdue while the app sits open with no other
-    // Firestore writes to trigger the snapshot listener.
-    func startMonitoring(medicationsProvider: @escaping () -> [Medication]) {
-        self.medicationsProvider = medicationsProvider
-        for med in medicationsProvider() { startListening(for: med.id) }
-        missedCheckTimer?.invalidate()
-        missedCheckTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            guard let self, let meds = self.medicationsProvider?() else { return }
-            self.markMissedIfOverdue(medications: meds)
-        }
-    }
-
     func startListening(for id: UUID) {
-        guard listeners[id] == nil, let ref = docRef(for: id) else { return }
-        listeners[id] = ref.addSnapshotListener { [weak self] snapshot, _ in
-            guard let self, let data = snapshot?.data(),
-                  let entries = Self.decodeEntries(data) else { return }
-            self.cache[id] = entries
+        guard listeners[id] == nil, let uid = AuthenticationManager.shared.uid else { return }
+        listeners[id] = remoteStore.listenToEntries(uid: uid, medicationId: id) { [weak self] entries in
+            guard let self else { return }
+            self.entriesByMedicationId[id] = entries
             self.checkMissed(for: id)
         }
     }
 
     private func persist(_ entries: [DoseEntry], id: UUID) {
-        cache[id] = entries
-        guard let dict = Self.encodeEntries(entries), let ref = docRef(for: id) else { return }
-        ref.setData(dict)
-    }
-
-    private static func encodeEntries(_ entries: [DoseEntry]) -> [String: Any]? {
-        guard let data = try? JSONEncoder().encode(entries),
-              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
-        return ["entries": arr]
-    }
-
-    private static func decodeEntries(_ dict: [String: Any]) -> [DoseEntry]? {
-        guard let arr = dict["entries"] as? [[String: Any]],
-              let data = try? JSONSerialization.data(withJSONObject: arr),
-              let entries = try? JSONDecoder().decode([DoseEntry].self, from: data) else { return nil }
-        return entries
+        entriesByMedicationId[id] = entries
+        Task {
+            guard let uid = AuthenticationManager.shared.uid else { return }
+            do {
+                try await remoteStore.saveEntries(uid: uid, medicationId: id, entries: entries)
+            } catch {
+                print("CalendarPersistenceManager: failed to save dose entries - \(error.localizedDescription)")
+            }
+        }
     }
 }
