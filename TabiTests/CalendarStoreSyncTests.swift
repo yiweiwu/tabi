@@ -37,6 +37,54 @@ struct CalendarStoreSyncTests {
     }
 }
 
+// MARK: - Rolling Schedule Extension Tests
+
+// Covers decideExtension - the pure logic behind keeping each medication's
+// persisted DoseEntry window actually rolling forward, instead of a one-time
+// 30-day allocation from whenever the medication was last added/edited (see
+// .claude/rules/dose-tracking.md).
+@Suite
+struct CalendarStoreScheduleExtensionTests {
+
+    @Test("Plenty of runway left: no extension")
+    func testNoExtensionWhenRunwayIsLong() throws {
+        let now = Date()
+        let horizon = Calendar.current.date(byAdding: .day, value: 20, to: now)!
+        #expect(CalendarStore.decideExtension(horizon: horizon, now: now) == nil)
+    }
+
+    @Test("Runway below the threshold: extends forward from the day after the current horizon")
+    func testExtendsWhenRunwayIsShort() throws {
+        let now = Date()
+        let horizon = Calendar.current.date(byAdding: .day, value: 3, to: now)!
+
+        let decision = try #require(CalendarStore.decideExtension(horizon: horizon, now: now))
+
+        let expectedStart = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: horizon))!
+        let expectedEnd = Calendar.current.date(byAdding: .day, value: MedicationScheduleParser.scheduleWindowDays, to: now)!
+        #expect(Calendar.current.isDate(decision.startDate, inSameDayAs: expectedStart))
+        #expect(Calendar.current.isDate(decision.endDate, inSameDayAs: expectedEnd))
+    }
+
+    @Test("Exactly at the threshold boundary still extends (< not <=)")
+    func testExtendsRightAtThreshold() throws {
+        let now = Date()
+        let horizon = Calendar.current.date(byAdding: .day, value: CalendarStore.scheduleExtensionThresholdDays - 1, to: now)!
+        #expect(CalendarStore.decideExtension(horizon: horizon, now: now) != nil)
+    }
+
+    @Test("A horizon already in the past still extends forward from tomorrow, not from the stale horizon")
+    func testExtendsFromPastHorizon() throws {
+        let now = Date()
+        let staleHorizon = Calendar.current.date(byAdding: .day, value: -5, to: now)!
+
+        let decision = try #require(CalendarStore.decideExtension(horizon: staleHorizon, now: now))
+
+        #expect(decision.startDate > staleHorizon)
+        #expect(decision.endDate > now)
+    }
+}
+
 // MARK: - Fake Remote Store
 
 // Not exercised by the tests above (see the suite's doc comment), but kept

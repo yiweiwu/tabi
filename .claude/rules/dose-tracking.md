@@ -5,9 +5,8 @@ paths:
   - "Tabi/Models/DoseModels.swift"
   - "Tabi/Models/Medication.swift"
   - "Tabi/Services/MedicationScheduleParser.swift"
-  - "Tabi/Services/MedicationTimelineProvider.swift"
   - "Tabi/Services/Firestore/CalendarStore.swift"
-  - "Tabi/ViewModels/MedicationStore.swift"
+  - "Tabi/Services/Firestore/MedicationStore.swift"
 ---
 
 # Dose Tracking Logic
@@ -39,7 +38,15 @@ For the Calendar view's per-day `DoseEntry` list (`DoseSchedule.buildEntries()` 
 ## Calendar active-day check
 `TodayView`'s non-today history rows read `CalendarStore.shared.loadAll(forMedicationId:)`/`loadEntries(forDay:medications:)` (held as `@ObservedObject`, per `.claude/rules/firestore.md`'s Cache-Aside Stores section - not called from inside `body` without observing it, or the view won't re-render when the listener pushes an update). A day is active only if dose entries exist for it — meaning the medication had already been added by that date. Do **not** use a simple "any day before today" check, as that would incorrectly mark days before the medication was added.
 
-`WeekCalendarDotGrid` (`Views/Calendar/CalendarView.swift`) does *not* go through `CalendarStore` - the whole Calendar tab timeline still runs on `ScheduledMedication`/`MockMedicationTimelineProvider`'s mock data, per `CLAUDE.md`'s Data ownership section. Don't assume its dots reflect real dose data yet.
+`WeekCalendarDotGrid`/`MonthCalendarGrid` (`Views/Calendar/CalendarView.swift`) read `Medication` (from `MedicationStore`) and `DoseEntry` (from `CalendarStore.entriesByMedicationId`, passed down from `CalendarView`) directly - `doseDotStatus(for:on:entriesByMedicationId:)` and `aggregateDoseStatus(_:)` (`Models/DoseModels.swift`) turn those into the dot. `DoseDotStatus` only has two cases, `.taken`/`.missed` - the dots deliberately only report on doses that have actually resolved. `DoseStatus.dotStatus` returns `nil` for `.upcoming` (hasn't happened) and `.skipped` (pre-add seed, never actually required - see Mid-day medication add above), and those get filtered out of the day's aggregate entirely rather than shown as a third "scheduled" bucket. A day with no dot means either no `DoseEntry` exists for that medication that day (not yet added, or beyond the persisted window), or everything that day is still unresolved (a same-day dose scheduled for later, or a fully skip-seeded add day) - a day with at least one resolved dose still gets a dot even if other doses that day haven't happened yet.
+
+## Rolling dose-entry window
+
+`DoseEntry` documents aren't generated indefinitely into the future - `MedicationScheduleParser.schedule(for:dosage:)` materializes `MedicationScheduleParser.scheduleWindowDays` (30) days of `.upcoming` entries at a time, written by `CalendarStore.save(schedule:)` on add/edit. Left alone, that's a one-time allocation: a medication added once and never edited would run out of entries entirely past day 30 (not "no dose taken" - no record at all).
+
+`CalendarStore`'s existing 60s missed-dose timer (`startMonitoringCurrentMedications`) also calls `extendScheduleIfNeeded(for:)` per medication on every tick, which keeps the window actually rolling: once the furthest-out persisted entry (`horizon`) comes within `CalendarStore.scheduleExtensionThresholdDays` (7) of now, it appends fresh `.upcoming` entries out to a new `now + scheduleWindowDays` horizon - additively, via `persist(existing + schedule.buildEntries(), id:)`, never touching already-persisted entries. `CalendarStore.decideExtension(horizon:now:)` is the pure decision function behind this (mirrors `decideFetch`), tested in `CalendarStoreScheduleExtensionTests` without live Firebase.
+
+This only affects *future* `.upcoming` entries. Once an entry's status flips away from `.upcoming` (`.taken`/`.skipped`/`.missed`), it's permanent - neither `save(schedule:)` nor `extendScheduleIfNeeded` ever deletes or truncates existing entries, so historical dose history has no 30-day limitation. The longer-horizon concern there is unbounded growth of the single `entries` array Firestore document (`users/{uid}/doses/{medicationId}`, capped at 1MB) - not addressed here; would need archiving/sharding if it ever becomes real.
 
 ## Gotchas
 - `DoseStatus` is a `Codable` enum with associated values — it has custom `encode`/`decode`. Don't add new cases without updating both.

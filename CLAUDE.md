@@ -31,9 +31,8 @@ Tabi/
 ├── DesignSystem.swift         — Color extensions + pillColors constant
 ├── Models/
 │   ├── Medication.swift       — Medication, GameStats, Achievement
-│   ├── DoseModels.swift       — DoseStatus, DoseEntry, DoseSchedule, DetectedMedicationInfo
-│   ├── UserProfile.swift      — UserProfile, UserSettings, Pharmacy, Allergy
-│   └── MedicationTimelineModels.swift — ScheduledMedication, Weekday, DoseDotStatus (mock data backing the Calendar tab's week/month view — not wired to MedicationStore/Firestore yet)
+│   ├── DoseModels.swift       — DoseStatus, DoseEntry, DoseSchedule, DoseDotStatus (+ aggregateDoseStatus/doseDotStatus, feeding the Calendar tab's week/month dots), DetectedMedicationInfo
+│   └── UserProfile.swift      — UserProfile, UserSettings, Pharmacy, Allergy
 ├── ViewModels/
 │   └── CalendarViewModel.swift — unused; not a FirestoreCacheStore, so it stays out of Services/Firestore/ (see Store naming & encapsulation below)
 ├── Services/
@@ -45,7 +44,6 @@ Tabi/
 │   ├── AuthenticationManager.swift — Firebase Auth singleton (Sign in with Apple + Google)
 │   ├── MedicationScheduleParser.swift
 │   ├── NotificationScheduler.swift
-│   ├── MedicationTimelineProvider.swift — `MedicationTimelineProviding` protocol + `MockMedicationTimelineProvider`; the seam to swap in a real backend for the Calendar tab later
 │   └── Firestore/
 │       ├── FirestoreCacheStore.swift — `FirestoreCacheStore` protocol (`fetchIfNeeded()`/`invalidate()`/`refresh()`) + `FirestoreFetchDecision`; the shared cache-aside shape every store below conforms to
 │       ├── UserProfileStore.swift — single owner of `UserProfile` state: in-memory cache + Firestore persistence (the `users/{uid}` doc)
@@ -88,8 +86,8 @@ Most persistent app data should follow one pattern: a singleton `ObservableObjec
 These four stores share one exact interface, `FirestoreCacheStore` (`fetchIfNeeded()`/`invalidate()`/`refresh()` — see `FirestoreCacheStore.swift`): populate the cache once per sign-in and trust it after that, like a memcache in front of Firestore. Crucially, that cache is populated from `TABIApp`'s launch `.task`, not from whichever screen happens to open first — a store's data must never depend on incidental navigation to exist (see `SharedPeopleStore`'s history below). `invalidate()`/`refresh()` exist for the one case where the cache can go stale on its own — data mutated by something other than this client (a Cloud Function, another device) — not for casual "just in case" re-fetching. A view that reads one of these stores holds it as `@ObservedObject`, not a bare `.shared` call inside `body` — see `TodayView`/`WeeklyProgressView`, which observe `CalendarStore.shared` directly rather than depending on some unrelated state change to trigger a re-render.
 
 This migration isn't finished everywhere — don't treat these gaps as license to add more local-only state, they're things to close, not to copy:
-- `CalendarView` manages its own local state directly; `CalendarViewModel` exists but is unused.
-- The Calendar tab's week/month view is still backed by `MockMedicationTimelineProvider`'s mock data (`MedicationTimelineProvider.swift`), not real Firestore-backed data.
+- `CalendarView` manages its own local state directly (`currentDate`/`viewMode`, both short-lived UI state); `CalendarViewModel` exists but is unused. It does hold `MedicationStore`/`CalendarStore` as `@ObservedObject` and read real `Medication`/`DoseEntry` data for the week/month grids — see `.claude/rules/dose-tracking.md`.
+- The Calendar tab has no refill-reminder feature — it was removed along with the mock timeline data it depended on (`daysOfSupplyRemaining`, per-medication pharmacy) since neither exists on the real `Medication`/`UserProfile` models. Re-add only once real supply tracking exists; don't reintroduce it with fabricated numbers.
 
 ### Store naming & encapsulation
 

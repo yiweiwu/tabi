@@ -117,6 +117,61 @@ struct DoseSchedule {
     }
 }
 
+// MARK: - Dose Dot Status
+
+// Shared by the Calendar tab's week grid (per-medication) and month grid
+// (aggregated across every medication for a day) so both use the same
+// taken/missed rule and the same colors. Deliberately only two cases -
+// future/not-yet-resolved doses aren't a Calendar dot concern (see
+// DoseStatus.dotStatus below), so there's no third "scheduled" bucket to
+// represent them.
+enum DoseDotStatus: Equatable {
+    case taken, missed
+
+    var color: Color {
+        switch self {
+        case .taken:  return .tabiGreen
+        case .missed: return .tabiRed
+        }
+    }
+}
+
+extension DoseStatus {
+    // nil for the two states that aren't a resolved outcome yet: `.upcoming`
+    // (hasn't happened) and `.skipped` (a pre-add seed - see
+    // DoseSchedule.buildEntries above - representing a dose that predates
+    // the medication being active, never actually required of the user).
+    // The Calendar dots only care about what was actually taken or missed.
+    var dotStatus: DoseDotStatus? {
+        switch self {
+        case .taken:  return .taken
+        case .missed: return .missed
+        case .upcoming, .skipped: return nil
+        }
+    }
+}
+
+// Aggregates entries pooled across multiple medications (or multiple
+// scheduled times for one medication) for a single day's dot. Any missed
+// dose makes the whole day read as missed; otherwise everything that
+// resolved was taken.
+func aggregateDoseStatus(_ statuses: [DoseDotStatus]) -> DoseDotStatus? {
+    guard !statuses.isEmpty else { return nil }
+    return statuses.contains(.missed) ? .missed : .taken
+}
+
+// nil means there's nothing resolved to report for this medication that day
+// - not yet added, past its rolling window, or every dose that day is still
+// `.upcoming`/`.skipped` (see DoseStatus.dotStatus). The Calendar dots leave
+// that day blank rather than showing a status for it.
+func doseDotStatus(for medicationId: UUID, on day: Date, entriesByMedicationId: [UUID: [DoseEntry]]) -> DoseDotStatus? {
+    let cal = Calendar.current
+    let dayEntries = (entriesByMedicationId[medicationId] ?? []).filter { cal.isDate($0.scheduledDate, inSameDayAs: day) }
+    let statuses = dayEntries.compactMap(\.status.dotStatus)
+    guard !statuses.isEmpty else { return nil }
+    return aggregateDoseStatus(statuses)
+}
+
 // MARK: - Detected Medication Info (from camera scan)
 
 struct DetectedMedicationInfo {

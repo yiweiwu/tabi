@@ -65,12 +65,57 @@ final class CalendarStore: ObservableObject, FirestoreCacheStore {
         missedCheckTimer?.invalidate()
         // Re-scans every minute to catch doses that go overdue while the app
         // sits open with no other Firestore write to trigger a snapshot
-        // listener. Reads MedicationStore.shared.medications live on each
-        // tick (rather than a snapshot captured here) so medications added
-        // after this fires are still covered.
+        // listener, and to keep each medication's persisted DoseEntry window
+        // rolling forward (see extendScheduleIfNeeded). Reads
+        // MedicationStore.shared.medications live on each tick (rather than
+        // a snapshot captured here) so medications added after this fires
+        // are still covered.
         missedCheckTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.markMissedIfOverdue(medications: MedicationStore.shared.medications)
+            guard let self else { return }
+            let medications = MedicationStore.shared.medications
+            self.markMissedIfOverdue(medications: medications)
+            for med in medications { self.extendScheduleIfNeeded(for: med) }
         }
+    }
+
+    // How many days of runway must remain before the window gets pushed
+    // forward. A medication added once and never edited would otherwise
+    // stop having any DoseEntry documents past its original add-time
+    // MedicationScheduleParser.scheduleWindowDays horizon - not "no dose
+    // taken", but literally no record at all, which reads to the Calendar
+    // month view and the missed-dose check as "not scheduled." This keeps
+    // the window genuinely rolling instead of a one-time allocation.
+    static let scheduleExtensionThresholdDays = 7
+
+    // Pure decision logic, kept separate from the Firestore write below so
+    // it's testable without live Firebase - same shape as decideFetch.
+    // Returns nil when there's still enough runway to skip extending.
+    static func decideExtension(horizon: Date, now: Date = Date(), windowDays: Int = MedicationScheduleParser.scheduleWindowDays, extendWhenWithinDays: Int = scheduleExtensionThresholdDays) -> (startDate: Date, endDate: Date)? {
+        let cal = Calendar.current
+        guard let thresholdDate = cal.date(byAdding: .day, value: extendWhenWithinDays, to: now), horizon < thresholdDate else { return nil }
+        guard let newStart = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: horizon)),
+              let newEnd = cal.date(byAdding: .day, value: windowDays, to: now),
+              newStart <= newEnd else { return nil }
+        return (startDate: newStart, endDate: newEnd)
+    }
+
+    // Appends fresh `.upcoming` entries beyond the medication's current
+    // furthest-out entry, rather than rebuilding the whole window like
+    // save(schedule:) does - existing taken/skipped/missed history and
+    // near-term upcoming entries are untouched.
+    private func extendScheduleIfNeeded(for medication: Medication) {
+        let existing = loadAll(forMedicationId: medication.id)
+        guard let horizon = existing.map(\.scheduledDate).max(),
+              let decision = Self.decideExtension(horizon: horizon) else { return }
+
+        let schedule = DoseSchedule(
+            medicationId: medication.id, medicationName: medication.name,
+            medicationEmoji: medication.emoji, dosage: medication.dosage,
+            colorIndex: medication.colorIndex,
+            scheduledTimes: MedicationScheduleParser.times(for: medication.resolvedDoseTimeMinutes),
+            startDate: decision.startDate, endDate: decision.endDate
+        )
+        persist(existing + schedule.buildEntries(), id: medication.id)
     }
 
     func save(schedule: DoseSchedule) {
