@@ -33,10 +33,9 @@ Tabi/
 │   ├── Medication.swift       — Medication, GameStats, Achievement
 │   ├── DoseModels.swift       — DoseStatus, DoseEntry, DoseSchedule, DetectedMedicationInfo
 │   ├── UserProfile.swift      — UserProfile, UserSettings, Pharmacy, Allergy
-│   └── MedicationTimelineModels.swift — ScheduledMedication, Weekday, DoseDotStatus (mock data backing the Calendar tab's week/month view — not wired to MedicationManager/Firestore yet)
+│   └── MedicationTimelineModels.swift — ScheduledMedication, Weekday, DoseDotStatus (mock data backing the Calendar tab's week/month view — not wired to MedicationStore/Firestore yet)
 ├── ViewModels/
-│   ├── MedicationManager.swift
-│   └── CalendarViewModel.swift
+│   └── CalendarViewModel.swift — unused; not a FirestoreCacheStore, so it stays out of Services/Firestore/ (see Store naming & encapsulation below)
 ├── Services/
 │   ├── AnalyzeMedication/
 │   │   ├── GeminiService.swift  — Gemini API for prescription label extraction
@@ -48,10 +47,15 @@ Tabi/
 │   ├── NotificationScheduler.swift
 │   ├── MedicationTimelineProvider.swift — `MedicationTimelineProviding` protocol + `MockMedicationTimelineProvider`; the seam to swap in a real backend for the Calendar tab later
 │   └── Firestore/
-│       ├── CalendarPersistenceManager.swift
+│       ├── FirestoreCacheStore.swift — `FirestoreCacheStore` protocol (`fetchIfNeeded()`/`invalidate()`/`refresh()`) + `FirestoreFetchDecision`; the shared cache-aside shape every store below conforms to
 │       ├── UserProfileStore.swift — single owner of `UserProfile` state: in-memory cache + Firestore persistence (the `users/{uid}` doc)
 │       ├── UserProfileRemoteStore.swift — `UserProfileRemoteStore` protocol + `FirestoreUserProfileRemoteStore`; the Firestore boundary UserProfileStore syncs through
-│       ├── MedicationRemoteStore.swift — `MedicationRemoteStore` protocol + `FirestoreMedicationRemoteStore`; the Firestore boundary MedicationManager (in ViewModels/) syncs medications through
+│       ├── MedicationStore.swift — single owner of `Medication`/`GameStats` state (moved here from `ViewModels/` — a `FirestoreCacheStore` belongs in `Services/Firestore/` regardless of who observes it)
+│       ├── MedicationRemoteStore.swift — `MedicationRemoteStore` protocol + `FirestoreMedicationRemoteStore`; the Firestore boundary MedicationStore syncs through
+│       ├── SharedPeopleStore.swift — single owner of `SharedPerson` state; the one store where callers use `refresh()` (force re-fetch) instead of plain `fetchIfNeeded()`, since a caretaker's opt-in status can change server-side
+│       ├── SharedPeopleRemoteStore.swift — `SharedPeopleRemoteStore` protocol + `FirestoreSharedPeopleRemoteStore`; the Firestore boundary SharedPeopleStore syncs through
+│       ├── CalendarPersistenceManager.swift — single owner of `DoseEntry` state, one Firestore listener per medication; `fetchIfNeeded()` means "subscribe" rather than a one-shot read. Still named "Manager," not "Store" — see Store naming & encapsulation below
+│       ├── CalendarRemoteStore.swift — `CalendarRemoteStore` protocol + `FirestoreCalendarRemoteStore`; the Firestore boundary CalendarPersistenceManager syncs through
 │       ├── MissedDoseAlertService.swift — fans out a missed-dose SMS alert doc per caretaker to Firestore
 │       ├── ConnectionConfirmationService.swift — writes a caretaker-added SMS confirmation doc to Firestore
 │       └── FirestoreHelpers.swift — `firestoreDict()`/`decoded(from:)` Codable <-> Firestore helpers
@@ -69,7 +73,8 @@ Tabi/
 - New screen → `Views/<FeatureName>/`
 - New data type → `Models/`
 - New service (API, persistence, hardware) → `Services/`
-- New ObservableObject that drives a screen → `ViewModels/`
+- New ObservableObject that drives a screen but isn't itself Firestore-backed → `ViewModels/`
+- New `FirestoreCacheStore` conformer → `Services/Firestore/`, named `<Domain>Store` (see Store naming & encapsulation below) — never `ViewModels/`, even though it's an `ObservableObject` a view observes
 - Design tokens (colors, spacing) → `DesignSystem.swift`
 
 This root file only carries genuinely project-wide context. Feature-specific conventions live in path-scoped rules that load only when relevant files are read — see [Feature-scoped rules](#feature-scoped-rules) below.
@@ -78,17 +83,27 @@ This root file only carries genuinely project-wide context. Feature-specific con
 
 ### Data ownership
 
-Most persistent app data should follow one pattern: a singleton `ObservableObject` (`MedicationManager`, `UserProfileStore`) holds an in-memory cache that's the single source of truth, backed 1:1 by Firestore under `users/{uid}` (see `.claude/rules/firestore.md`). Local `@State` should only ever be a short-lived edit buffer for the screen it's declared on, committed immediately or on an explicit "Save" — never a buffer that spans multiple screens or a multi-step flow and only syncs at the very end. Backgrounding or killing the app mid-flow silently loses anything not yet synced; see the profile bullet under State management below for two real bugs this caused.
+Most persistent app data should follow one pattern: a singleton `ObservableObject` (`MedicationStore`, `UserProfileStore`, `SharedPeopleStore`, `CalendarPersistenceManager`) holds an in-memory cache that's the single source of truth, backed 1:1 by Firestore under `users/{uid}` (see `.claude/rules/firestore.md`). Local `@State` should only ever be a short-lived edit buffer for the screen it's declared on, committed immediately or on an explicit "Save" — never a buffer that spans multiple screens or a multi-step flow and only syncs at the very end. Backgrounding or killing the app mid-flow silently loses anything not yet synced; see the profile bullet under State management below for two real bugs this caused.
+
+These four stores share one exact interface, `FirestoreCacheStore` (`fetchIfNeeded()`/`invalidate()`/`refresh()` — see `FirestoreCacheStore.swift`): populate the cache once per sign-in and trust it after that, like a memcache in front of Firestore. Crucially, that cache is populated from `TABIApp`'s launch `.task`, not from whichever screen happens to open first — a store's data must never depend on incidental navigation to exist (see `SharedPeopleStore`'s history below). `invalidate()`/`refresh()` exist for the one case where the cache can go stale on its own — data mutated by something other than this client (a Cloud Function, another device) — not for casual "just in case" re-fetching. A view that reads one of these stores holds it as `@ObservedObject`, not a bare `.shared` call inside `body` — see `TodayView`/`WeeklyProgressView`, which observe `CalendarPersistenceManager.shared` directly rather than depending on some unrelated state change to trigger a re-render.
 
 This migration isn't finished everywhere — don't treat these gaps as license to add more local-only state, they're things to close, not to copy:
 - `CalendarView` manages its own local state directly; `CalendarViewModel` exists but is unused.
 - The Calendar tab's week/month view is still backed by `MockMedicationTimelineProvider`'s mock data (`MedicationTimelineProvider.swift`), not real Firestore-backed data.
 
+### Store naming & encapsulation
+
+Every `FirestoreCacheStore` conformer follows the same three rules, so a new one is recognizable on sight and old ones don't drift apart:
+
+1. **Name it `<Domain>Store`**, not `Manager`, `Persistence*`, or anything else — `UserProfileStore`, `MedicationStore`, `SharedPeopleStore`. `MedicationStore` used to be `MedicationManager`; nothing about what it does changed, only the name, once it became clear "Manager" and "Store" were the same role wearing two names. `CalendarPersistenceManager` still owes this rename — don't copy its name for anything new.
+2. **File lives in `Services/Firestore/`**, never `ViewModels/`. `MedicationManager.swift` used to sit in `ViewModels/` — reasonable-looking (it's an `ObservableObject` a view observes), but wrong: `ViewModels/` is for view-driving logic that *isn't* itself a Firestore-backed store (see `CalendarViewModel`, unused but correctly placed if it were used). A store's home is defined by what it owns, not by who reads it.
+3. **One store, one Firestore-backed domain concept.** `MedicationStore` used to also expose `userProfile`, a passthrough property to `UserProfileStore.shared.profile` — convenient for call sites, but it meant profile data had two names in the codebase and no clear single owner from a reader's perspective. Deleted; call sites reference `UserProfileStore.shared.profile` directly now. If a view needs data from two stores, it observes both stores directly — a store never proxies another store's data just to save an `@ObservedObject` line at the call site. The one legitimate exception already in the codebase is `MedicationStore.gameStats`: it's genuinely medication-derived, not borrowed from another store's domain — though note it isn't actually Firestore-backed itself (`totalPoints`/`currentStreak`/`level` reset on relaunch, `adherencePercent` is a hardcoded `97`, `achievements` is never populated), a separate, still-open gap from this same audit.
+
 ### Singletons
 `CameraManager`, `GeminiService`, `NotificationScheduler`, and the Firestore-backed services are deliberate singletons — don't add a new one without a clear lifecycle reason. Rationale for each lives in its feature's scoped rule.
 
 ### State management
-- `MedicationManager` is the source of truth for medications and game stats, passed down as `@ObservedObject`. Backed by Firestore — use `add(_:)` to add medications, never append directly to `medications`.
+- `MedicationStore` is the source of truth for medications and game stats, passed down as `@ObservedObject`. Backed by Firestore — use `add(_:)` to add medications, never append directly to `medications`.
 - `CalendarViewModel` exists but is currently unused — `CalendarView` manages its own state directly.
 - Prefer `@ObservedObject` over re-creating ViewModels to avoid state loss
 - User profile data's one home is `UserProfileStore.shared.profile`, per the Data ownership rule above — see `.claude/rules/firestore.md` for the specifics and the real bugs this caused.
@@ -124,7 +139,7 @@ pre-flight checklist.
 User-facing legal docs live at the repo root: `PRIVACY_POLICY.md` and
 `TERMS_OF_SERVICE.md` (mirrored in-app via `PrivacyPolicyView.swift`, linked
 from the auth screen and Settings → Privacy). `AuthenticationManager.deleteAccountAndAllData()`
-plus `MedicationManager.deleteAllLocalData()` implement the account/data
+plus `MedicationStore.deleteAllLocalData()` implement the account/data
 deletion these documents promise — keep both in sync if the deletion scope
 ever changes.
 

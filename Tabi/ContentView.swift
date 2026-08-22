@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Main Content View
 
 struct ContentView: View {
-    @ObservedObject private var medicationManager = MedicationManager.shared
+    @ObservedObject private var medicationManager = MedicationStore.shared
     @State private var selectedTab = 0
 
     var body: some View {
@@ -28,7 +28,6 @@ struct ContentView: View {
         .preferredColorScheme(.light) // Force light mode
         .onAppear {
             NotificationScheduler.shared.requestPermission()
-            medicationManager.startMissedDoseMonitoring()
         }
     }
 }

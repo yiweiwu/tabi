@@ -4,7 +4,7 @@ import SwiftUI
 
 struct EditMedicationView: View {
     let medication: Medication
-    @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject var medicationManager: MedicationStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var genericName: String
@@ -13,7 +13,7 @@ struct EditMedicationView: View {
     @State private var frequencyPerDay: Int
     @State private var doseTimes: [Date]
 
-    init(medication: Medication, medicationManager: MedicationManager) {
+    init(medication: Medication, medicationManager: MedicationStore) {
         self.medication = medication
         self.medicationManager = medicationManager
         _genericName = State(initialValue: medication.genericName)

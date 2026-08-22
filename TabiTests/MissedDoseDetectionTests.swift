@@ -101,8 +101,8 @@ struct DoseScheduleBuildEntriesTests {
         )
     }
 
-    @Test("A dose whose time already passed today, on the day it was added, is seeded as taken")
-    func testAlreadyPassedTimeOnAddDayIsSeededTaken() throws {
+    @Test("A dose whose time already passed today, on the day it was added, is seeded as skipped")
+    func testAlreadyPassedTimeOnAddDayIsSeededSkipped() throws {
         let addedAt = time(14) // added at 2pm
         let s = schedule(scheduledTimes: [time(8), time(20)], startDate: addedAt) // 8am, 8pm
 
@@ -113,11 +113,16 @@ struct DoseScheduleBuildEntriesTests {
         let morning = todaysEntries.first { Calendar.current.component(.hour, from: $0.scheduledDate) == 8 }
         let evening = todaysEntries.first { Calendar.current.component(.hour, from: $0.scheduledDate) == 20 }
 
-        #expect(morning?.status == .taken(addedAt), "8am already passed by the 2pm add time, so it should be pre-seeded taken")
+        // Not .taken - the user never tapped Taken. Not .upcoming either - that
+        // would let the missed-dose checker later flip it to .missed and fire a
+        // false caretaker alert for a dose that predates the medication even
+        // being added. .skipped is the deliberate middle ground (see
+        // .claude/rules/dose-tracking.md's Mid-day medication add section).
+        #expect(morning?.status == .skipped(addedAt), "8am already passed by the 2pm add time, so it should be pre-seeded skipped")
         #expect(evening?.status == .upcoming, "8pm hasn't happened yet, so it should stay upcoming")
     }
 
-    @Test("Future days keep the same time-of-day as upcoming, even though the add day's version was seeded taken")
+    @Test("Future days keep the same time-of-day as upcoming, even though the add day's version was seeded skipped")
     func testFutureDaysStayUpcomingDespiteSameTimeBeingPastOnAddDay() throws {
         let addedAt = time(14) // added at 2pm, so 8am today already passed
         let s = schedule(scheduledTimes: [time(8)], startDate: addedAt)

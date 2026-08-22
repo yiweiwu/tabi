@@ -1,10 +1,11 @@
 ---
 paths:
   - "Tabi/Services/Firestore/**"
-  - "Tabi/ViewModels/MedicationManager.swift"
+  - "Tabi/ViewModels/MedicationStore.swift"
   - "Tabi/Models/UserProfile.swift"
   - "Tabi/Views/Profile/**"
   - "Tabi/Views/Onboarding/**"
+  - "Tabi/Views/Sharing/**"
   - "firestore.rules"
   - "firestore.indexes.json"
   - "functions/**"
@@ -31,8 +32,22 @@ Every extra field is a new source of discrepancy. If existing data can answer th
 Stored models: `Medication`, `DoseEntry`, `SharedPerson`, `UserProfile`. Firestore paths are scoped by the signed-in Firebase Auth uid (`AuthenticationManager.shared.uid`), not a device ID:
 - `users/{uid}/medications/{id}`
 - `users/{uid}/doses/{medicationId}` (contains `entries` array)
-- `users/{uid}/sharedPeople/{id}`
-- `users/{uid}` (the profile fields live directly on this document, via `UserProfileStore` — not `MedicationManager`, which only reads it)
+- `users/{uid}/sharedPeople/{id}` (via `SharedPeopleStore`)
+- `users/{uid}` (the profile fields live directly on this document, via `UserProfileStore` — not `MedicationStore`, which only reads it)
+
+## Cache-Aside Stores (`FirestoreCacheStore`)
+
+`UserProfileStore`, `MedicationStore`, `SharedPeopleStore`, and `CalendarPersistenceManager` all conform to `FirestoreCacheStore` (`Tabi/Services/Firestore/FirestoreCacheStore.swift`) - one shared interface for "memcache in front of Firestore":
+
+- `fetchIfNeeded()` populates the cache once per sign-in (guarded by a private `hasFetched`) and is a no-op every call after that. It's called unconditionally from `TABIApp`'s launch `.task` for all four - a store's data must never depend on some specific screen having been opened to exist. That was `SharedPeopleStore`'s original bug: it used to be view-owned `@State` with its own listener, only populated when `SharingView` happened to appear.
+- `invalidate()` clears the `hasFetched` guard (without clearing already-loaded data) so the next `fetchIfNeeded()` re-fetches instead of trusting the cache.
+- `refresh()` (a protocol extension, free on all four) is `invalidate()` + `fetchIfNeeded()` in one call - use it when a caller needs the *current* Firestore state, not whatever was true at last load.
+
+`CalendarPersistenceManager` bends "fetch" slightly: dose entries are one document per medication, kept live via a Firestore listener rather than pulled with a single request, so `fetchIfNeeded()` there means "start a listener for every medication `MedicationStore` currently knows about, plus the recurring missed-dose check" - not a one-shot read. It has to run *after* `MedicationStore.fetchIfNeeded()` in `TABIApp`'s launch task (it needs `medications` already populated to know which dose documents to subscribe to), so it can't sit inside the same `async let` group as the other three. A medication added later gets its own listener started directly by `save(schedule:)` (called from `MedicationStore.update(_:)`), not by re-running `fetchIfNeeded()`.
+
+Whether a store actually needs `refresh()` depends on who else can write its data:
+- `UserProfileStore`/`MedicationStore`/`CalendarPersistenceManager` are only ever mutated by this same signed-in client, through this same app, via optimistic local writes (`MedicationStore.add(_:)` etc.) that already keep the cache correct. Nothing currently calls their `invalidate()`/`refresh()` - there's no external source of staleness to force a re-check against.
+- `SharedPeopleStore` is different: `SharedPerson.optInStatus` is flipped from "pending" to "confirmed" server-side by `confirmCaretakerOptIn`, a Cloud Function using the Admin SDK that bypasses this client entirely. So every consumer that needs an accurate read - `SharingView` on appear, `MissedDoseAlertService` before deciding who to alert - calls `refresh()`, not plain `fetchIfNeeded()`. Don't "simplify" either of those call sites to `fetchIfNeeded()`; that would silently start trusting a session-old opt-in status again.
 
 ## User Profile Data
 

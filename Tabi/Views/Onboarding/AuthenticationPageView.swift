@@ -273,7 +273,7 @@ struct AuthenticationPageView: View {
                     _ = try await AuthenticationManager.shared.signIn(withEmail: email, password: password)
                 } else {
                     _ = try await AuthenticationManager.shared.signUp(withEmail: email, password: password)
-                    MedicationManager.shared.discardLegacyMedicationsForNewAccount()
+                    MedicationStore.shared.discardLegacyMedicationsForNewAccount()
                 }
                 await UserProfileStore.shared.fetchIfNeeded()
                 prefillFromExistingProfile()
@@ -324,7 +324,7 @@ struct AuthenticationPageView: View {
                 do {
                     let authResult = try await AuthenticationManager.shared.signInWithApple(idTokenString: idTokenString, nonce: nonce, fullName: credential.fullName)
                     if authResult.additionalUserInfo?.isNewUser == true {
-                        MedicationManager.shared.discardLegacyMedicationsForNewAccount()
+                        MedicationStore.shared.discardLegacyMedicationsForNewAccount()
                     }
                     await UserProfileStore.shared.fetchIfNeeded()
                     prefillFromExistingProfile()
@@ -351,7 +351,7 @@ struct AuthenticationPageView: View {
         do {
             let authResult = try await AuthenticationManager.shared.signInWithGoogle(presenting: presentingViewController)
             if authResult.additionalUserInfo?.isNewUser == true {
-                MedicationManager.shared.discardLegacyMedicationsForNewAccount()
+                MedicationStore.shared.discardLegacyMedicationsForNewAccount()
             }
             await UserProfileStore.shared.fetchIfNeeded()
             prefillFromExistingProfile()

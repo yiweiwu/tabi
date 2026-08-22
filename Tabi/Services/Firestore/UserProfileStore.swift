@@ -10,10 +10,10 @@ import FirebaseFirestore
 // more than one copy of the profile floating around the app.
 //
 // Not @MainActor, matching every other manager in this codebase
-// (CalendarPersistenceManager, MedicationManager, NotificationScheduler) -
+// (CalendarPersistenceManager, MedicationStore, NotificationScheduler) -
 // per CLAUDE.md's concurrency convention, UI-affecting mutations are
 // dispatched to main manually rather than via compiler-enforced isolation.
-final class UserProfileStore: ObservableObject {
+final class UserProfileStore: ObservableObject, FirestoreCacheStore {
     static let shared = UserProfileStore()
 
     @Published var profile = UserProfile() {
@@ -39,16 +39,8 @@ final class UserProfileStore: ObservableObject {
     // that I/O can't run in a unit test (no FirebaseApp configured in
     // TabiTests), but the branching that decides whether it *should* run
     // can be reasoned about and tested on its own.
-    enum FetchDecision: Equatable {
-        case skipAlreadyFetched
-        case skipNoSignedInUser
-        case fetch(uid: String)
-    }
-
-    static func decideFetch(hasFetched: Bool, uid: String?) -> FetchDecision {
-        guard !hasFetched else { return .skipAlreadyFetched }
-        guard let uid else { return .skipNoSignedInUser }
-        return .fetch(uid: uid)
+    static func decideFetch(hasFetched: Bool, uid: String?) -> FirestoreFetchDecision {
+        decideFirestoreFetch(hasFetched: hasFetched, uid: uid)
     }
 
     // One-shot fetch into the in-memory cache. Guarded by `hasFetched` so
@@ -99,6 +91,13 @@ final class UserProfileStore: ObservableObject {
         isApplyingFetch = true
         profile = UserProfile()
         isApplyingFetch = false
+    }
+
+    // Required by FirestoreCacheStore, but nothing currently calls it - the
+    // profile is only ever mutated by this same client's own writes, so
+    // there's no external source of staleness to force a re-check against.
+    func invalidate() {
+        hasFetched = false
     }
 
     private func persist(_ profile: UserProfile) {

@@ -6,7 +6,7 @@ import CoreLocation
 // MARK: - Profile View
 
 struct ProfileView: View {
-    @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject var medicationManager: MedicationStore
     @ObservedObject private var profileStore = UserProfileStore.shared
     @State private var showingEditSheet = false
     @State private var showingAllergyProfile = false
@@ -755,7 +755,7 @@ extension LocationSearchService: MKLocalSearchCompleterDelegate {
 
 // MARK: - Settings View
 struct SettingsView: View {
-    @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject var medicationManager: MedicationStore
     @ObservedObject private var profileStore = UserProfileStore.shared
     @Environment(\.dismiss) private var dismiss
     @StateObject private var locationManager = LocationManager()

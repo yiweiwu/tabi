@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Medication Progress View
 
 struct MedicationProgressView: View {
-    @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject var medicationManager: MedicationStore
 
     var body: some View {
         NavigationView {
@@ -78,7 +78,8 @@ struct AchievementRow: View {
 // MARK: - Weekly Progress View
 
 struct WeeklyProgressView: View {
-    @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject var medicationManager: MedicationStore
+    @ObservedObject private var calendarStore = CalendarPersistenceManager.shared
     private let cal = Calendar.current
     private let dayLabels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
@@ -94,7 +95,7 @@ struct WeeklyProgressView: View {
     // `.taken` - never inferred just because the day has passed.
     private func isPerfectDay(_ day: Date) -> Bool {
         let entriesByMed = medicationManager.medications.map { med in
-            CalendarPersistenceManager.shared.loadAll(forMedicationId: med.id)
+            calendarStore.loadAll(forMedicationId: med.id)
                 .filter { cal.isDate($0.scheduledDate, inSameDayAs: day) }
         }
         let activeEntries = entriesByMed.filter { !$0.isEmpty }

@@ -2,7 +2,6 @@ import SwiftUI
 import Contacts
 import ContactsUI
 import MessageUI
-import FirebaseFirestore
 import UIKit
 
 // MARK: - Contact Picker
@@ -236,7 +235,7 @@ struct AskSomeoneToShareView: View {
 // MARK: - Share With Someone View
 
 struct ShareWithSomeoneView: View {
-    @ObservedObject var medicationManager: MedicationManager
+    @ObservedObject var medicationManager: MedicationStore
     var onConnectionAdded: ((SharedPerson) -> Void)?
     @Environment(\.dismiss) var dismiss
     @State private var phoneNumber = ""
@@ -254,7 +253,7 @@ struct ShareWithSomeoneView: View {
     // sendConnectionConfirmation, since email has no carrier opt-in
     // requirement and SMS does.
     private var confirmationMessage: String {
-        let userName = medicationManager.userProfile.firstName.isEmpty ? "the user" : medicationManager.userProfile.firstName
+        let userName = UserProfileStore.shared.profile.firstName.isEmpty ? "the user" : UserProfileStore.shared.profile.firstName
         let contactName = selectedContactName.isEmpty ? "there" : selectedContactName.components(separatedBy: " ").first ?? selectedContactName
 
         return """
@@ -311,7 +310,7 @@ struct ShareWithSomeoneView: View {
                 sharedPersonId: newConnection.id,
                 phone: phoneNumber,
                 contactName: contactName,
-                patientName: medicationManager.userProfile.firstName
+                patientName: UserProfileStore.shared.profile.firstName
             )
             finish("Added \(newConnection.name) to your shared connections. We've texted them a link to confirm — they'll start getting alerts once they tap it.")
         } else if MailComposeView.canSendMail {
@@ -572,20 +571,14 @@ struct ScanQRCodeView: View {
 // MARK: - Sharing View
 
 struct SharingView: View {
-    @ObservedObject var medicationManager: MedicationManager
-    @State private var sharingPeople: [SharedPerson] = []
+    @ObservedObject var medicationManager: MedicationStore
+    @ObservedObject private var sharedPeopleStore = SharedPeopleStore.shared
     @State private var showDeleteConfirmation = false
     @State private var personToDelete: SharedPerson?
     @State private var isEditMode = false
-    @State private var listener: ListenerRegistration?
 
-    // Requires a signed-in user - no anonymous/device-ID fallback, since that
-    // would reintroduce unscoped access to another installation's data.
-    private var collection: CollectionReference? {
-        guard let userId = AuthenticationManager.shared.uid else { return nil }
-        return Firestore.firestore().collection("users").document(userId).collection("sharedPeople")
-    }
-    
+    private var sharingPeople: [SharedPerson] { sharedPeopleStore.sharedPeople }
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -738,15 +731,12 @@ struct SharingView: View {
             .background(Color.tabiBG)
             .navigationTitle("Sharing")
         }
-        .onAppear {
-            listener = collection?.addSnapshotListener { snapshot, _ in
-                guard let docs = snapshot?.documents else { return }
-                sharingPeople = docs.compactMap { Self.decodePerson($0.data()) }.sorted { $0.dateAdded > $1.dateAdded }
-            }
-        }
-        .onDisappear {
-            listener?.remove()
-            listener = nil
+        .task {
+            // Forces a re-fetch (rather than plain fetchIfNeeded()) so a
+            // caretaker's opt-in status confirmed since the app launched
+            // shows up as soon as this screen is opened, not just at
+            // whatever state Firestore was in at launch.
+            await sharedPeopleStore.refresh()
         }
         .alert("Remove Connection", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -766,27 +756,23 @@ struct SharingView: View {
     }
     
     private func addConnection(_ person: SharedPerson) {
-        guard let dict = Self.encodePerson(person), let collection else { return }
-        collection.document(person.id.uuidString).setData(dict)
+        sharedPeopleStore.add(person)
     }
 
     private func removeConnection(_ person: SharedPerson) {
-        collection?.document(person.id.uuidString).delete()
+        sharedPeopleStore.remove(person)
     }
-
-    private static func encodePerson(_ person: SharedPerson) -> [String: Any]? { person.firestoreDict() }
-    private static func decodePerson(_ dict: [String: Any]) -> SharedPerson? { SharedPerson.decoded(from: dict) }
 }
 
 // MARK: - Previews
 
 #Preview("Sharing View") {
-    SharingView(medicationManager: MedicationManager())
+    SharingView(medicationManager: MedicationStore())
 }
 
 #Preview("Share With Someone") {
     NavigationView {
-        ShareWithSomeoneView(medicationManager: MedicationManager(), onConnectionAdded: { person in
+        ShareWithSomeoneView(medicationManager: MedicationStore(), onConnectionAdded: { person in
             print("Added connection: \(person.name)")
         })
     }

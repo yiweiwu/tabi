@@ -36,8 +36,13 @@ struct TABIApp: App {
                 // app) and silently skip the fetch for the whole session.
                 await AuthenticationManager.shared.waitForInitialAuthState()
                 async let profile: Void = UserProfileStore.shared.fetchIfNeeded()
-                async let medications: Void = MedicationManager.shared.fetchIfNeeded()
-                _ = await (profile, medications)
+                async let medications: Void = MedicationStore.shared.fetchIfNeeded()
+                async let sharedPeople: Void = SharedPeopleStore.shared.fetchIfNeeded()
+                _ = await (profile, medications, sharedPeople)
+                // Needs MedicationStore.shared.medications already populated
+                // (to know which dose documents to listen to), so it can't run
+                // inside the async let group above alongside medications itself.
+                await CalendarPersistenceManager.shared.fetchIfNeeded()
             }
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)
