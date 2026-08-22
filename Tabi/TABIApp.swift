@@ -42,7 +42,7 @@ struct TABIApp: App {
                 // Needs MedicationStore.shared.medications already populated
                 // (to know which dose documents to listen to), so it can't run
                 // inside the async let group above alongside medications itself.
-                await CalendarPersistenceManager.shared.fetchIfNeeded()
+                await CalendarStore.shared.fetchIfNeeded()
             }
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)

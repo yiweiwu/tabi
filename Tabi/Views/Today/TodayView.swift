@@ -4,7 +4,7 @@ import SwiftUI
 
 struct TodayView: View {
     @ObservedObject var medicationManager: MedicationStore
-    @ObservedObject private var calendarStore = CalendarPersistenceManager.shared
+    @ObservedObject private var calendarStore = CalendarStore.shared
     @State private var showingCamera = false
     @State private var isEditing = false
     @State private var selectedDate = Date()
@@ -13,7 +13,7 @@ struct TodayView: View {
     private var isSelectedToday: Bool { Calendar.current.isDateInToday(selectedDate) }
 
     // Groups DoseEntry records by medication for non-today dates.
-    // Reads from CalendarPersistenceManager's in-memory cache (populated by
+    // Reads from CalendarStore's in-memory cache (populated by
     // Firestore listeners started at app launch) - held as @ObservedObject
     // above so this view re-renders whenever that cache changes, not just
     // when medicationManager happens to change too.

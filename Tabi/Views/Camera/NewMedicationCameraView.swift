@@ -105,7 +105,7 @@ struct NewMedicationCameraView: View {
                     )
                     medicationManager.add(newMed)
                     let schedule = MedicationScheduleParser.parse(info: finalInfo, medication: newMed)
-                    CalendarPersistenceManager.shared.save(schedule: schedule)
+                    CalendarStore.shared.save(schedule: schedule)
                     NotificationScheduler.shared.schedule(for: schedule)
                     captureResult = nil; isPresented = false
                 },

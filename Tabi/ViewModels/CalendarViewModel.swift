@@ -10,7 +10,7 @@ class CalendarViewModel: ObservableObject {
     @Published var showDaySheet = false
     @Published var viewMode: ViewMode = .month
     enum ViewMode: String, CaseIterable { case week = "Week", month = "Month", year = "Year" }
-    private let p = CalendarPersistenceManager.shared
+    private let p = CalendarStore.shared
 
     func load(medications: [Medication]) {
         p.markMissedIfOverdue(medications: medications)

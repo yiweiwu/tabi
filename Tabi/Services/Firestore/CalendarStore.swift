@@ -1,7 +1,7 @@
 import Foundation
 import FirebaseFirestore
 
-// MARK: - Calendar Persistence Manager
+// MARK: - Calendar Store
 
 // Single owner of dose-schedule state: an in-memory cache backed by
 // Firestore through CalendarRemoteStore, conforming to FirestoreCacheStore
@@ -16,11 +16,11 @@ import FirebaseFirestore
 //
 // @Published (not a plain cache dictionary) so views observe changes
 // directly - see TodayView/WeeklyProgressView, which hold this as
-// @ObservedObject rather than reaching into CalendarPersistenceManager.shared
+// @ObservedObject rather than reaching into CalendarStore.shared
 // from inside their body and hoping some unrelated state change triggers a
 // re-render.
-final class CalendarPersistenceManager: ObservableObject, FirestoreCacheStore {
-    static let shared = CalendarPersistenceManager()
+final class CalendarStore: ObservableObject, FirestoreCacheStore {
+    static let shared = CalendarStore()
     @Published private(set) var entriesByMedicationId: [UUID: [DoseEntry]] = [:]
     private var listeners: [UUID: ListenerRegistration] = [:]
     private var missedCheckTimer: Timer?
@@ -49,7 +49,7 @@ final class CalendarPersistenceManager: ObservableObject, FirestoreCacheStore {
         case .skipAlreadyFetched:
             return
         case .skipNoSignedInUser:
-            print("CalendarPersistenceManager: skipping fetch - no signed-in user")
+            print("CalendarStore: skipping fetch - no signed-in user")
         case .fetch:
             hasFetched = true
             startMonitoringCurrentMedications()
@@ -130,7 +130,7 @@ final class CalendarPersistenceManager: ObservableObject, FirestoreCacheStore {
             do {
                 try await remoteStore.saveEntries(uid: uid, medicationId: id, entries: entries)
             } catch {
-                print("CalendarPersistenceManager: failed to save dose entries - \(error.localizedDescription)")
+                print("CalendarStore: failed to save dose entries - \(error.localizedDescription)")
             }
         }
     }

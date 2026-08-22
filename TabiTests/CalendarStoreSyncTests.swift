@@ -3,9 +3,9 @@ import Foundation
 import FirebaseFirestore
 @testable import Tabi
 
-// MARK: - Calendar Persistence Sync Tests
+// MARK: - Calendar Store Sync Tests
 
-// Covers CalendarPersistenceManager's FirestoreCacheStore conformance,
+// Covers CalendarStore's FirestoreCacheStore conformance,
 // mirroring UserProfileLoadingTests/MedicationStoreSyncTests/SharedPeopleSyncTests.
 //
 // Narrower than its siblings on purpose: every other public method here
@@ -18,22 +18,22 @@ import FirebaseFirestore
 // argument and never touch AuthenticationManager). decideFetch is the one
 // piece of this store's logic that's pure and safe to test without it.
 @Suite
-struct CalendarPersistenceSyncTests {
+struct CalendarStoreSyncTests {
 
     @Test("Already-fetched sessions skip, regardless of uid")
     func testAlreadyFetchedSkipsEvenWithAUser() throws {
-        #expect(CalendarPersistenceManager.decideFetch(hasFetched: true, uid: "user-123") == .skipAlreadyFetched)
-        #expect(CalendarPersistenceManager.decideFetch(hasFetched: true, uid: nil) == .skipAlreadyFetched)
+        #expect(CalendarStore.decideFetch(hasFetched: true, uid: "user-123") == .skipAlreadyFetched)
+        #expect(CalendarStore.decideFetch(hasFetched: true, uid: nil) == .skipAlreadyFetched)
     }
 
     @Test("No signed-in user skips instead of fetching")
     func testNoUserSkipsWithoutMarkingFetched() throws {
-        #expect(CalendarPersistenceManager.decideFetch(hasFetched: false, uid: nil) == .skipNoSignedInUser)
+        #expect(CalendarStore.decideFetch(hasFetched: false, uid: nil) == .skipNoSignedInUser)
     }
 
     @Test("A signed-in, not-yet-fetched session proceeds to fetch that uid")
     func testSignedInNotYetFetchedProceedsToFetch() throws {
-        #expect(CalendarPersistenceManager.decideFetch(hasFetched: false, uid: "user-123") == .fetch(uid: "user-123"))
+        #expect(CalendarStore.decideFetch(hasFetched: false, uid: "user-123") == .fetch(uid: "user-123"))
     }
 }
 

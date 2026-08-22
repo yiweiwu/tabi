@@ -33,7 +33,7 @@ class AuthenticationManager {
     var currentUser: FirebaseAuth.User?
 
     // nonisolated: Auth.auth().currentUser is a thread-safe, synchronous read
-    // in FirebaseAuth, and callers like CalendarPersistenceManager/SharingView
+    // in FirebaseAuth, and callers like CalendarStore/SharingView
     // are not MainActor-isolated, so uid must be reachable without a hop.
     nonisolated var uid: String? { Auth.auth().currentUser?.uid }
 
