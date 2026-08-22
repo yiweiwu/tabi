@@ -5,7 +5,7 @@ import FirebaseFirestore
 
 // The Firestore boundary for dose entries, pulled out as a protocol (mirrors
 // MedicationRemoteStore/UserProfileRemoteStore/SharedPeopleRemoteStore) so
-// CalendarPersistenceManager's fetch/save/listen logic can run against a
+// CalendarStore's fetch/save/listen logic can run against a
 // fake in unit tests. `FirestoreCalendarRemoteStore` is the only conformance
 // the app itself uses - production always talks to real Firestore.
 //
@@ -13,7 +13,7 @@ import FirebaseFirestore
 // the other three remote stores' single collection - hence `medicationId`
 // on every method, and `listenToEntries` alongside the usual fetch/save
 // (dose entries are kept live via a Firestore listener, not pulled once -
-// see CalendarPersistenceManager/FirestoreCacheStore).
+// see CalendarStore/FirestoreCacheStore).
 protocol CalendarRemoteStore {
     func fetchEntries(uid: String, medicationId: UUID) async throws -> [DoseEntry]
     func saveEntries(uid: String, medicationId: UUID, entries: [DoseEntry]) async throws

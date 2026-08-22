@@ -109,7 +109,7 @@ Because `ContentView`'s `MedicationStore` is created fresh only after
 `hasCompletedOnboarding` flips true, and reads from the same
 `UserProfileStore` singleton, the onboarding flow and the main app's Profile
 tab now share one data source instead of two disconnected copies. There's no
-anonymous/device-ID fallback (matching `CalendarPersistenceManager`'s
+anonymous/device-ID fallback (matching `CalendarStore`'s
 existing pattern for doses): if a user skips the Authentication page, the
 entered name/age/gender stays in the in-memory cache for that session but
 never reaches Firestore.

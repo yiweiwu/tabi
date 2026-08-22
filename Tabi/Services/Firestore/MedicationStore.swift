@@ -156,11 +156,11 @@ class MedicationStore: ObservableObject, FirestoreCacheStore {
     // Persists an edited medication (name, dosage, frequency, dose times)
     // and regenerates its upcoming schedule/notifications so the new times
     // take effect immediately - past/resolved DoseEntry records are left
-    // untouched (see CalendarPersistenceManager.save(schedule:)).
+    // untouched (see CalendarStore.save(schedule:)).
     func update(_ medication: Medication) {
         save(medication)
         let schedule = MedicationScheduleParser.schedule(for: medication, dosage: medication.dosage)
-        CalendarPersistenceManager.shared.save(schedule: schedule)
+        CalendarStore.shared.save(schedule: schedule)
         NotificationScheduler.shared.schedule(for: schedule)
     }
 
@@ -203,12 +203,12 @@ class MedicationStore: ObservableObject, FirestoreCacheStore {
     // instead of the entry silently staying `.upcoming` (or later flipping
     // to `.missed`) despite the user having taken the dose.
     private func markTodaysDoseTaken(for medication: Medication) {
-        let todaysUpcoming = CalendarPersistenceManager.shared.loadAll(forMedicationId: medication.id)
+        let todaysUpcoming = CalendarStore.shared.loadAll(forMedicationId: medication.id)
             .filter { Calendar.current.isDateInToday($0.scheduledDate) }
             .sorted { $0.scheduledDate < $1.scheduledDate }
             .first { if case .upcoming = $0.status { return true }; return false }
         guard let entry = todaysUpcoming else { return }
-        CalendarPersistenceManager.shared.updateStatus(entryId: entry.id, medicationId: medication.id, status: .taken(Date()))
+        CalendarStore.shared.updateStatus(entryId: entry.id, medicationId: medication.id, status: .taken(Date()))
     }
 
     func recordMedicationSkipped(_ medication: Medication) {
@@ -237,12 +237,12 @@ class MedicationStore: ObservableObject, FirestoreCacheStore {
     // so the Calendar view reflects the skip and the missed-dose checker
     // doesn't later flip it to `.missed` and fire a false caretaker alert.
     private func markTodaysDoseSkipped(for medication: Medication) {
-        let todaysUpcoming = CalendarPersistenceManager.shared.loadAll(forMedicationId: medication.id)
+        let todaysUpcoming = CalendarStore.shared.loadAll(forMedicationId: medication.id)
             .filter { Calendar.current.isDateInToday($0.scheduledDate) }
             .sorted { $0.scheduledDate < $1.scheduledDate }
             .first { if case .upcoming = $0.status { return true }; return false }
         guard let entry = todaysUpcoming else { return }
-        CalendarPersistenceManager.shared.updateStatus(entryId: entry.id, medicationId: medication.id, status: .skipped(Date()))
+        CalendarStore.shared.updateStatus(entryId: entry.id, medicationId: medication.id, status: .skipped(Date()))
     }
 
     // Clears everything stored on-device. Firestore-backed data (doses,

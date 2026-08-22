@@ -26,7 +26,7 @@ struct FirestoreMedicationRemoteStore: MedicationRemoteStore {
 
     // Full overwrite (no merge) - MedicationStore always holds the
     // complete Medication struct in memory before calling this, same as
-    // CalendarPersistenceManager.persist() does for dose entries.
+    // CalendarStore.persist() does for dose entries.
     func saveMedication(uid: String, medication: Medication) async throws {
         guard let dict = medication.firestoreDict() else { return }
         try await collection(uid: uid).document(medication.id.uuidString).setData(dict)

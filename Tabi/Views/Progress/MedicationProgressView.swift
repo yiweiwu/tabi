@@ -79,7 +79,7 @@ struct AchievementRow: View {
 
 struct WeeklyProgressView: View {
     @ObservedObject var medicationManager: MedicationStore
-    @ObservedObject private var calendarStore = CalendarPersistenceManager.shared
+    @ObservedObject private var calendarStore = CalendarStore.shared
     private let cal = Calendar.current
     private let dayLabels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 

@@ -6,7 +6,7 @@ paths:
   - "Tabi/Models/Medication.swift"
   - "Tabi/Services/MedicationScheduleParser.swift"
   - "Tabi/Services/MedicationTimelineProvider.swift"
-  - "Tabi/Services/Firestore/CalendarPersistenceManager.swift"
+  - "Tabi/Services/Firestore/CalendarStore.swift"
   - "Tabi/ViewModels/MedicationStore.swift"
 ---
 
@@ -37,11 +37,11 @@ For the Calendar view's per-day `DoseEntry` list (`DoseSchedule.buildEntries()` 
 **Never show the total frequency count for today** — always show the remaining count. Use `frequencyPerDay - takenTodayCount` for today's bar, `frequencyPerDay` for future bars.
 
 ## Calendar active-day check
-`TodayView`'s non-today history rows read `CalendarPersistenceManager.shared.loadAll(forMedicationId:)`/`loadEntries(forDay:medications:)` (held as `@ObservedObject`, per `.claude/rules/firestore.md`'s Cache-Aside Stores section - not called from inside `body` without observing it, or the view won't re-render when the listener pushes an update). A day is active only if dose entries exist for it — meaning the medication had already been added by that date. Do **not** use a simple "any day before today" check, as that would incorrectly mark days before the medication was added.
+`TodayView`'s non-today history rows read `CalendarStore.shared.loadAll(forMedicationId:)`/`loadEntries(forDay:medications:)` (held as `@ObservedObject`, per `.claude/rules/firestore.md`'s Cache-Aside Stores section - not called from inside `body` without observing it, or the view won't re-render when the listener pushes an update). A day is active only if dose entries exist for it — meaning the medication had already been added by that date. Do **not** use a simple "any day before today" check, as that would incorrectly mark days before the medication was added.
 
-`WeekCalendarDotGrid` (`Views/Calendar/CalendarView.swift`) does *not* go through `CalendarPersistenceManager` - the whole Calendar tab timeline still runs on `ScheduledMedication`/`MockMedicationTimelineProvider`'s mock data, per `CLAUDE.md`'s Data ownership section. Don't assume its dots reflect real dose data yet.
+`WeekCalendarDotGrid` (`Views/Calendar/CalendarView.swift`) does *not* go through `CalendarStore` - the whole Calendar tab timeline still runs on `ScheduledMedication`/`MockMedicationTimelineProvider`'s mock data, per `CLAUDE.md`'s Data ownership section. Don't assume its dots reflect real dose data yet.
 
 ## Gotchas
 - `DoseStatus` is a `Codable` enum with associated values — it has custom `encode`/`decode`. Don't add new cases without updating both.
 - `NotificationScheduler.shared` schedules/cancels local reminders based on `takenToday`/`frequencyPerDay` — any change to the source-of-truth fields above should double-check whether a corresponding cancel/reschedule call is still correct.
-- `CalendarPersistenceManager.fetchIfNeeded()` (called from `TABIApp`'s launch task) starts the per-medication listeners and the 60s missed-dose timer once per sign-in - it replaced the old `MedicationStore.startMissedDoseMonitoring()` call that used to fire from `ContentView.onAppear`. A medication added later gets its listener from `save(schedule:)` directly, not from re-running `fetchIfNeeded()`.
+- `CalendarStore.fetchIfNeeded()` (called from `TABIApp`'s launch task) starts the per-medication listeners and the 60s missed-dose timer once per sign-in - it replaced the old `MedicationStore.startMissedDoseMonitoring()` call that used to fire from `ContentView.onAppear`. A medication added later gets its listener from `save(schedule:)` directly, not from re-running `fetchIfNeeded()`.

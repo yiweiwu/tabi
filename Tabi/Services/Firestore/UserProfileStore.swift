@@ -10,7 +10,7 @@ import FirebaseFirestore
 // more than one copy of the profile floating around the app.
 //
 // Not @MainActor, matching every other manager in this codebase
-// (CalendarPersistenceManager, MedicationStore, NotificationScheduler) -
+// (CalendarStore, MedicationStore, NotificationScheduler) -
 // per CLAUDE.md's concurrency convention, UI-affecting mutations are
 // dispatched to main manually rather than via compiler-enforced isolation.
 final class UserProfileStore: ObservableObject, FirestoreCacheStore {
@@ -48,7 +48,7 @@ final class UserProfileStore: ObservableObject, FirestoreCacheStore {
     // Firestore - callers should call this liberally rather than checking
     // state themselves. No-ops when signed out, matching the "no
     // anonymous/device-ID fallback" pattern already used by
-    // CalendarPersistenceManager for doses.
+    // CalendarStore for doses.
     func fetchIfNeeded() async {
         switch Self.decideFetch(hasFetched: hasFetched, uid: AuthenticationManager.shared.uid) {
         case .skipAlreadyFetched:
