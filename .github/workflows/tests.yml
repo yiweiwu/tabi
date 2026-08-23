@@ -1,0 +1,87 @@
+name: Unit Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+# Without this, pushing a new commit to a PR starts a new run alongside
+# whatever's still running from the previous push instead of replacing it -
+# exactly how two overlapping runs ended up stuck in progress at once.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    # A full cold build (no cache hit) has taken up to ~18 minutes; a hung
+    # run has been observed sitting well past that with zero log output -
+    # this bounds it so a future hang fails clearly instead of running (and
+    # burning CI minutes) indefinitely.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      # GoogleService-Info.plist and Config.swift are both gitignored
+      # (per-developer secrets, see CLAUDE.md) but required just to compile
+      # and launch the app target that hosts TabiTests. Neither test suite
+      # actually calls live Firebase or Gemini, so dummy values are fine -
+      # this would need to become real credentials if that ever changes.
+      - name: Write dummy per-developer config files
+        run: |
+          cp .github/ci/GoogleService-Info.plist Tabi/GoogleService-Info.plist
+          cp .github/ci/Config.swift Tabi/Config.swift
+
+      - name: Pick an available iPhone simulator
+        id: sim
+        run: |
+          NAME=$(xcrun simctl list devices available iOS -j \
+            | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].name')
+          if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
+            echo "error: no available iPhone simulator found on this runner" >&2
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      # GitHub's macOS runners start from a fresh VM every run, so without
+      # this Xcode has to rebuild its entire module cache from scratch each
+      # time - not just Firebase's SDK, but plain system frameworks too.
+      # Scoped to exclude our own Tabi/TabiTests/TabiUITests build output
+      # (pruned below before the cache saves) deliberately: those change on
+      # every PR, so they always rebuild fresh from actual PR source - no
+      # risk of a stale cache masking a real failure or hiding a real pass.
+      # Only the third-party SPM package builds (Firebase, GoogleSignIn,
+      # gRPC...) get reused, and only when Package.resolved is byte-identical
+      # to what produced the cache, so they're provably still correct.
+      - name: Cache DerivedData (third-party dependency build output only)
+        uses: actions/cache@v4
+        with:
+          path: DerivedData
+          key: ${{ runner.os }}-deriveddata-${{ steps.xcode.outputs.xcode-version }}-${{ hashFiles('Tabi.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+      - name: Run unit tests
+        run: |
+          xcrun xcodebuild test \
+            -scheme Tabi \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -derivedDataPath DerivedData \
+            -only-testing:TabiTests
+
+      # Runs even if tests failed above, so a red run still leaves a usable
+      # cache for the next push. Index.noindex is safe to drop too - it's
+      # only used for editor code completion, not building or testing.
+      - name: Prune our own build output before the cache saves
+        if: always()
+        run: |
+          rm -rf DerivedData/Build/Intermediates.noindex/Tabi.build
+          rm -rf DerivedData/Build/Intermediates.noindex/TabiTests.build
+          rm -rf DerivedData/Build/Intermediates.noindex/TabiUITests.build
+          rm -rf DerivedData/Build/Products/*/Tabi.app
+          rm -rf DerivedData/Build/Products/*/TabiTests.xctest
+          rm -rf DerivedData/Build/Products/*/TabiUITests-Runner.app
+          rm -rf DerivedData/Index.noindex
