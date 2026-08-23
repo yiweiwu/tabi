@@ -24,6 +24,8 @@ For the Calendar view's per-day `DoseEntry` list (`DoseSchedule.buildEntries()` 
 
 **Example**: twice-daily (8am, 8pm) added at 2pm → 8am shows as overdue (not taken) on the Today row, and as skipped (not taken, no alert) on the Calendar; 8pm still shows as upcoming/remaining.
 
+**Editing a medication again the same day.** `startDate` in `MedicationScheduleParser.schedule(for:dosage:)` is `Date()` at the moment `schedule(for:dosage:)` runs - every edit, not just the first add - so editing a medication again later the same day (e.g. changing a dose time from 8pm to 9pm after 8pm has already passed) re-runs the mid-day-add seeding logic above and produces a fresh `.skipped` entry for whatever's already passed under the *new* schedule. `CalendarStore.save(schedule:)` calls `entriesSurviving(_:regeneratingOn:)` before appending that fresh batch, which drops any `.skipped` entry scoped to that same day (stale seeds from an earlier edit today - e.g. the old 8pm slot, now nonsensical since the dose time changed) while leaving `.taken`/`.missed` entries and any `.skipped` entry from a *past* day (settled history from that day's own mid-day add) untouched. Without this, edits made after the day's dose time had passed would leave stale/duplicate `.skipped` entries behind forever, since nothing else ever cleans them up.
+
 ## Display rules (Today view and Calendar view must agree)
 | State | Today view | Calendar bar |
 |---|---|---|
