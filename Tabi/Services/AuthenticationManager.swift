@@ -25,6 +25,20 @@ enum AuthenticationError: LocalizedError {
     }
 }
 
+// Maps the FirebaseAuth error codes EmailVerificationGateView needs to
+// message distinctly from a generic failure.
+enum EmailVerificationError: LocalizedError {
+    case tooManyRequests
+    case alreadyVerified
+
+    var errorDescription: String? {
+        switch self {
+        case .tooManyRequests: return "Too many attempts. Please wait a bit before trying again."
+        case .alreadyVerified: return "This email is already verified."
+        }
+    }
+}
+
 @MainActor
 @Observable
 class AuthenticationManager {
@@ -115,12 +129,79 @@ class AuthenticationManager {
 
     // MARK: Sign in with Email
 
+    // The account is created first and is not rolled back if the
+    // verification email fails to send - a send failure is logged, not
+    // thrown, so the caller still gets back a valid signed-in account. The
+    // "check your inbox" screen's resend button is the recovery path for a
+    // failed send.
     func signUp(withEmail email: String, password: String) async throws -> AuthDataResult {
-        try await Auth.auth().createUser(withEmail: email, password: password)
+        let result = try await Auth.auth().createUser(withEmail: email, password: password)
+        do {
+            try await result.user.sendEmailVerification()
+        } catch {
+            print("Failed to send initial verification email: \(error)")
+        }
+        return result
     }
 
     func signIn(withEmail email: String, password: String) async throws -> AuthDataResult {
         try await Auth.auth().signIn(withEmail: email, password: password)
+    }
+
+    // MARK: Email verification
+
+    var isCurrentUserEmailVerified: Bool {
+        currentUser?.isEmailVerified ?? false
+    }
+
+    // A signed-in-but-unverified user only needs to be sent through the
+    // verification gate if their account actually carries the
+    // emailVerificationRequired custom claim (set by the onUserCreate
+    // Cloud Function for accounts created after this feature shipped) -
+    // an existing account from before then is unverified too, but was
+    // never asked to be, and Firestore's rules already exempt it. Checking
+    // isEmailVerified alone would incorrectly gate that grandfathered
+    // account on every sign-in. Fails open (returns false) on a token
+    // fetch error, since blocking a user we can't confirm needs gating is
+    // worse than letting a rules-enforced write fail later.
+    func currentUserRequiresEmailVerificationGate() async -> Bool {
+        guard let user = currentUser, !user.isEmailVerified else { return false }
+        do {
+            let tokenResult = try await user.getIDTokenResult()
+            return tokenResult.claims["emailVerificationRequired"] as? Bool == true
+        } catch {
+            print("Failed to fetch ID token claims: \(error)")
+            return false
+        }
+    }
+
+    func resendVerificationEmail() async throws {
+        guard let user = currentUser else { throw AuthenticationError.notSignedIn }
+        // Reload first - the cached user.isEmailVerified won't reflect a
+        // link the user already clicked in another tab/device.
+        try await user.reload()
+        if Auth.auth().currentUser?.isEmailVerified == true {
+            throw EmailVerificationError.alreadyVerified
+        }
+        do {
+            try await user.sendEmailVerification()
+        } catch let error as NSError where AuthErrorCode(rawValue: error.code) == .tooManyRequests {
+            throw EmailVerificationError.tooManyRequests
+        }
+    }
+
+    // Firebase doesn't push isEmailVerified updates to an existing session
+    // automatically - reload() re-fetches the account's current state, and
+    // forcing a token refresh afterward picks up both that flag and any
+    // custom claims (e.g. emailVerificationRequired) a Cloud Function may
+    // have changed server-side since sign-in. Call this from an "I've
+    // verified, continue" button after the user reports clicking the link.
+    @discardableResult
+    func reloadAndCheckEmailVerified() async throws -> Bool {
+        guard let user = currentUser else { throw AuthenticationError.notSignedIn }
+        try await user.reload()
+        _ = try await user.getIDTokenResult(forcingRefresh: true)
+        return Auth.auth().currentUser?.isEmailVerified ?? false
     }
 
     // MARK: Sign out

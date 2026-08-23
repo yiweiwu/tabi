@@ -1,5 +1,9 @@
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onRequest} = require("firebase-functions/v2/https");
+// v1 namespace: only used for the Auth onCreate trigger below, since v2's
+// equivalent (identity blocking functions) requires enabling Google Cloud
+// Identity Platform, a separate project-level upgrade this app doesn't use.
+const functionsV1 = require("firebase-functions/v1");
 const {SNSClient, PublishCommand} = require("@aws-sdk/client-sns");
 const admin = require("firebase-admin");
 
@@ -51,6 +55,30 @@ async function sendSms(phoneNumber, message) {
     console.error("Error sending SMS:", err);
   }
 }
+
+// Stamps a custom claim on every newly-created email/password account so
+// firestore.rules can require email verification before that account's
+// first write, without being able to tell "new account" from "existing
+// account" any other way (Firebase ID tokens don't expose account creation
+// time). Apple/Google sign-ins are skipped - Firebase already reports those
+// as emailVerified. Accounts created before this function was deployed
+// never receive the claim, which is what grandfathers them in: the rules
+// treat a missing claim as "verification not required".
+//
+// Client must force a token refresh (getIDTokenResult(forcingRefresh: true))
+// after this runs for the claim to reach the ID token - see
+// AuthenticationManager.reloadAndCheckEmailVerified().
+exports.onUserCreate = functionsV1.auth.user().onCreate(async (user) => {
+  const isPasswordAccount = user.providerData.some(
+      (p) => p.providerId === "password",
+  );
+  if (!isPasswordAccount) {
+    return;
+  }
+  await admin.auth().setCustomUserClaims(user.uid, {
+    emailVerificationRequired: true,
+  });
+});
 
 exports.sendMissedPillAlert = onDocumentCreated(
     {

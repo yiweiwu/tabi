@@ -64,7 +64,7 @@ Tabi/
     ├── Profile/   — ProfileView (incl. SettingsView), PrivacyPolicyView
     ├── Camera/    — NewMedicationCameraView, CameraView, DetectedMedicationView, AnalysisResultView
     ├── Progress/  — MedicationProgressView, AchievementRow, WeeklyProgressView
-    └── Onboarding/ — OnboardingFlow (coordinator + most pages, entry point is now WelcomeToTabiPageView), AuthenticationPageView, ProfileSetupPageView, PermissionsPageView, CompletionPageView
+    └── Onboarding/ — OnboardingFlow (coordinator + most pages, entry point is now WelcomeToTabiPageView), AuthenticationPageView, EmailVerificationGateView, ProfileSetupPageView, PermissionsPageView, CompletionPageView
 ```
 
 **Where to add new code:**

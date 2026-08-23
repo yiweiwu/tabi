@@ -20,6 +20,7 @@ class OnboardingCoordinator {
         case pillReminders
         case familySharing
         case authentication
+        case emailVerification
         case profileSetup
         case permissions
         case completion
@@ -36,6 +37,8 @@ class OnboardingCoordinator {
         case .familySharing:
             currentPage = .authentication
         case .authentication:
+            currentPage = .profileSetup
+        case .emailVerification:
             currentPage = .profileSetup
         case .profileSetup:
             // Persist as soon as the user leaves this page rather than
@@ -65,6 +68,8 @@ class OnboardingCoordinator {
             currentPage = .pillReminders
         case .authentication:
             currentPage = .familySharing
+        case .emailVerification:
+            currentPage = .authentication
         case .profileSetup:
             currentPage = .authentication
         case .permissions:
@@ -121,6 +126,9 @@ struct OnboardingView: View {
                         .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
                 case .authentication:
                     AuthenticationPageView()
+                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+                case .emailVerification:
+                    EmailVerificationGateView()
                         .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
                 case .profileSetup:
                     ProfileSetupPageView()
@@ -201,17 +209,18 @@ struct OnboardingView: View {
     }
     
     private var shouldShowBottomNavigation: Bool {
-        // Hide bottom navigation on authentication page since it has its own buttons
-        coordinator.currentPage != .authentication
+        // Hide bottom navigation on authentication and email verification
+        // pages since both manage their own buttons.
+        coordinator.currentPage != .authentication && coordinator.currentPage != .emailVerification
     }
-    
+
     private var buttonTitle: String {
         switch coordinator.currentPage {
         case .welcome:
             return "Get Started"
         case .medicineTracking, .pillReminders, .familySharing:
             return "Continue"
-        case .authentication:
+        case .authentication, .emailVerification:
             return "Continue"
         case .profileSetup:
             return "Continue"
