@@ -5,6 +5,10 @@ import GoogleSignIn
 // MARK: - Authentication Page
 
 struct AuthenticationPageView: View {
+    private enum Field {
+        case fullName, email, password
+    }
+
     @Environment(OnboardingCoordinator.self) private var coordinator
     @State private var showPhoneSignUp = false
     @State private var isSignInMode = false
@@ -16,6 +20,7 @@ struct AuthenticationPageView: View {
     @State private var fullName = ""
     @State private var email = ""
     @State private var password = ""
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         ZStack {
@@ -29,7 +34,7 @@ struct AuthenticationPageView: View {
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 48, height: 48)
 
-                        Text("Sign up")
+                        Text(isSignInMode ? "Sign in" : "Sign up")
                             .font(.title2.bold())
                             .foregroundColor(.primary)
                     }
@@ -51,6 +56,7 @@ struct AuthenticationPageView: View {
                                     TextField("Full name", text: $fullName)
                                         .textContentType(.name)
                                         .autocapitalization(.words)
+                                        .focused($focusedField, equals: .fullName)
                                         .onChange(of: fullName) { _, newValue in
                                             let parts = newValue.trimmingCharacters(in: .whitespaces)
                                                 .components(separatedBy: " ")
@@ -82,6 +88,7 @@ struct AuthenticationPageView: View {
                                     .textContentType(.emailAddress)
                                     .keyboardType(.emailAddress)
                                     .autocapitalization(.none)
+                                    .focused($focusedField, equals: .email)
                             }
                             .padding(.vertical, 10)
                             .padding(.horizontal, 14)
@@ -104,6 +111,7 @@ struct AuthenticationPageView: View {
                                     .foregroundColor(.tabiGray)
                                 SecureField("Password", text: $password)
                                     .textContentType(isSignInMode ? .password : .newPassword)
+                                    .focused($focusedField, equals: .password)
                             }
                             .padding(.vertical, 10)
                             .padding(.horizontal, 14)
@@ -266,6 +274,7 @@ struct AuthenticationPageView: View {
     }
 
     private func handleEmailContinue() {
+        focusedField = nil
         authError = nil
         isSigningIn = true
         Task {
@@ -300,7 +309,7 @@ struct AuthenticationPageView: View {
                 }
             } catch {
                 isSigningIn = false
-                authError = error.localizedDescription
+                authError = AuthenticationManager.friendlyMessage(for: error)
             }
         }
     }
@@ -352,7 +361,7 @@ struct AuthenticationPageView: View {
                     coordinator.nextPage()
                 } catch {
                     isSigningIn = false
-                    authError = error.localizedDescription
+                    authError = AuthenticationManager.friendlyMessage(for: error)
                 }
             }
         case .failure(let error):
@@ -380,7 +389,7 @@ struct AuthenticationPageView: View {
             coordinator.nextPage()
         } catch {
             isSigningIn = false
-            authError = error.localizedDescription
+            authError = AuthenticationManager.friendlyMessage(for: error)
         }
     }
 
