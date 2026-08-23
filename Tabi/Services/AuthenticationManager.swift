@@ -256,4 +256,37 @@ class AuthenticationManager {
         let hashed = SHA256.hash(data: Data(input.utf8))
         return hashed.compactMap { String(format: "%02x", $0) }.joined()
     }
+
+    // MARK: Error presentation
+
+    // FirebaseAuth's own localizedDescription strings are written for
+    // developers, not end users - e.g. .invalidCredential (which the SDK
+    // now returns for both a wrong password AND a nonexistent account, to
+    // avoid leaking which one it was) reads as "The supplied auth
+    // credential is malformed or has expired." Map the cases a user can
+    // actually hit on the sign-in/sign-up screen to plain language; fall
+    // back to the SDK's message for anything unanticipated rather than
+    // hiding it.
+    nonisolated static func friendlyMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        guard nsError.domain == AuthErrorDomain, let code = AuthErrorCode(rawValue: nsError.code) else {
+            return error.localizedDescription
+        }
+        switch code {
+        case .invalidCredential, .wrongPassword, .userNotFound:
+            return "Incorrect email or password."
+        case .emailAlreadyInUse:
+            return "An account with this email already exists."
+        case .weakPassword:
+            return "Please choose a stronger password."
+        case .invalidEmail:
+            return "Please enter a valid email address."
+        case .tooManyRequests:
+            return "Too many attempts. Please wait a bit before trying again."
+        case .networkError:
+            return "Network error. Please check your connection and try again."
+        default:
+            return error.localizedDescription
+        }
+    }
 }
