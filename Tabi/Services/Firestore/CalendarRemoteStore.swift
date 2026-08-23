@@ -17,6 +17,7 @@ import FirebaseFirestore
 protocol CalendarRemoteStore {
     func fetchEntries(uid: String, medicationId: UUID) async throws -> [DoseEntry]
     func saveEntries(uid: String, medicationId: UUID, entries: [DoseEntry]) async throws
+    func deleteEntries(uid: String, medicationId: UUID) async throws
     func listenToEntries(uid: String, medicationId: UUID, onChange: @escaping ([DoseEntry]) -> Void) -> ListenerRegistration
 }
 
@@ -41,6 +42,10 @@ struct FirestoreCalendarRemoteStore: CalendarRemoteStore {
     func saveEntries(uid: String, medicationId: UUID, entries: [DoseEntry]) async throws {
         guard let dict = DoseEntriesDocument(entries: entries).firestoreDict() else { return }
         try await docRef(uid: uid, medicationId: medicationId).setData(dict)
+    }
+
+    func deleteEntries(uid: String, medicationId: UUID) async throws {
+        try await docRef(uid: uid, medicationId: medicationId).delete()
     }
 
     func listenToEntries(uid: String, medicationId: UUID, onChange: @escaping ([DoseEntry]) -> Void) -> ListenerRegistration {

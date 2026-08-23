@@ -93,6 +93,7 @@ struct CalendarStoreScheduleExtensionTests {
 private final class FakeCalendarRemoteStore: CalendarRemoteStore {
     var entriesToReturn: [DoseEntry] = []
     private(set) var savedEntries: [[DoseEntry]] = []
+    private(set) var deletedMedicationIds: [UUID] = []
 
     func fetchEntries(uid: String, medicationId: UUID) async throws -> [DoseEntry] {
         entriesToReturn
@@ -100,6 +101,10 @@ private final class FakeCalendarRemoteStore: CalendarRemoteStore {
 
     func saveEntries(uid: String, medicationId: UUID, entries: [DoseEntry]) async throws {
         savedEntries.append(entries)
+    }
+
+    func deleteEntries(uid: String, medicationId: UUID) async throws {
+        deletedMedicationIds.append(medicationId)
     }
 
     func listenToEntries(uid: String, medicationId: UUID, onChange: @escaping ([DoseEntry]) -> Void) -> ListenerRegistration {

@@ -126,6 +126,28 @@ final class CalendarStore: ObservableObject, FirestoreCacheStore {
         startListening(for: schedule.medicationId)
     }
 
+    // Called from MedicationStore.remove(_:) so a removed medication's dose
+    // history doesn't outlive it as an orphaned doses/{medicationId} doc.
+    // Without this, the server-side checkMissedDoses Cloud Function - which
+    // scans every doses doc it can find (functions/index.js), unlike this
+    // client's markMissedIfOverdue which only ever looks at medications
+    // MedicationStore currently knows about - would keep finding it forever
+    // and could fire a caretaker alert for a medication the user explicitly
+    // deleted.
+    func remove(medicationId: UUID) {
+        listeners[medicationId]?.remove()
+        listeners[medicationId] = nil
+        entriesByMedicationId[medicationId] = nil
+        Task {
+            guard let uid = AuthenticationManager.shared.uid else { return }
+            do {
+                try await remoteStore.deleteEntries(uid: uid, medicationId: medicationId)
+            } catch {
+                print("CalendarStore: failed to delete dose entries - \(error.localizedDescription)")
+            }
+        }
+    }
+
     func loadAll(forMedicationId id: UUID) -> [DoseEntry] {
         entriesByMedicationId[id] ?? []
     }
@@ -149,13 +171,28 @@ final class CalendarStore: ObservableObject, FirestoreCacheStore {
         for med in medications { checkMissed(for: med.id) }
     }
 
-    // Flips overdue `.upcoming` entries to `.missed` and fires a caretaker
-    // alert for each one newly missed. See `applyingMissedStatus` for why a
-    // re-run (e.g. the listener re-firing after `persist` below) won't
-    // re-alert for a dose already marked missed.
+    // Detects overdue `.upcoming` entries and fires a caretaker alert for
+    // each one - the client's fast path, running every 60s/on every
+    // listener snapshot while the app is open. Deliberately does NOT
+    // persist the flip to `.missed` anymore: that's now written exclusively
+    // by the server-side checkMissedDoses Cloud Function (functions/index.js,
+    // hourly). Two independent writers (this client, that function) both
+    // doing read-then-overwrite-the-whole-array on the same doc is a lost-
+    // update race - a `.taken`/`.skipped` tap landing between the other
+    // side's read and write would get silently reverted. The client can't
+    // coordinate with the server's schedule, so the safe fix is for it to
+    // simply never write `.missed`; the entry stays `.upcoming` in Firestore
+    // until the server's next run catches up (see
+    // MedicationStore.earliestUnresolvedEntry, which matches `.missed` too
+    // so a late Taken/Skip tap still overrides whatever the server wrote).
+    //
+    // Because this never persists the flip, the same overdue entry reads as
+    // "newly missed" on every single call while the app stays open and the
+    // dose remains unresolved - MissedDoseAlertService.sendAlert relies on a
+    // deterministic Firestore doc ID (not this function) to avoid spamming
+    // repeat alerts; see its doc comment.
     private func checkMissed(for id: UUID) {
-        let (updated, newlyMissed) = loadAll(forMedicationId: id).applyingMissedStatus()
-        if !newlyMissed.isEmpty { persist(updated, id: id) }
+        let (_, newlyMissed) = loadAll(forMedicationId: id).applyingMissedStatus()
         for entry in newlyMissed { MissedDoseAlertService.shared.sendAlert(for: entry) }
     }
 
