@@ -16,8 +16,8 @@ Pushes the current branch, merges it into main, and cleans up. No review require
    If on `main`, stop and tell the user in plain language:
    > "You're on the main branch — there's nothing to ship here. Use `/start` to begin a new feature first."
 
-2. Get context about what was built. If the user already described their work earlier in the conversation, use it directly — don't confirm, just proceed. Only ask if there is genuinely no context available:
-   > "What did you build or fix? Give me a sentence or two — I'll use it to document the changes."
+2. Get context about what was built — the problem/reason (why), not just the change (what). If the user already described their work earlier in the conversation, use it directly — don't confirm, just proceed. Only ask if there is genuinely no context available:
+   > "What problem does this solve? A sentence or two on the why — I'll use it to document the changes."
 
    Store this as `<user_context>`. You'll use it for the commit message, PR description, and conflict resolution.
 
@@ -48,9 +48,26 @@ Pushes the current branch, merges it into main, and cleans up. No review require
 
    Then stop. Once they return after authenticating, pick up from step 4 and do everything for them.
 
-   Once authenticated, create a PR using `<user_context>` as the body, then merge it:
+   Once authenticated, create a PR. Compose the body yourself from `<user_context>` and the diff — never paste `<user_context>` in raw, and never lead with a bullet list of what changed. Structure it as:
+
+   ```markdown
+   ## <Problem to Solve / Bug to Fix / Goal — pick whichever fits>
+   <1-3 sentences: the problem or reason this MR exists, not what the code does. Someone scanning the PR list for 5 seconds should get the point from this alone. Only explain the non-obvious part — skip anything already obvious from the title or diff.>
+
+   ## Details
+   <Only if there's more worth knowing than the opening section already covered - bullet points of what changed, for someone who's actually interested. Skip this section entirely for small/self-explanatory changes.>
+
+   ## Test plan
+   <checklist of what was verified>
+   ```
+
+   Pick the opening heading to match what the PR actually is — "Bug to Fix" for a fix, "Goal" for a new feature, "Problem to Solve" as the general-purpose default. Don't default to a generic "Why" every time.
+
+   Bad opening (too long, front-loads mechanism): "CalendarStore.save(schedule:) only ever stripped .upcoming entries before appending a freshly-built schedule, so a .skipped mid-day-add seed never got replaced, which meant editing a medication..."
+   Good opening (states the problem, nothing else), under "## Bug to Fix": "Editing a medication's schedule twice in one day left stale dose entries behind instead of replacing them."
+
    ```bash
-   gh pr create --title "<branch name, humanized>" --body "<user_context>"
+   gh pr create --title "<branch name, humanized>" --body "<composed body>"
    gh pr merge --squash --delete-branch
    ```
 
