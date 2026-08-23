@@ -13,7 +13,30 @@ class CameraManager: NSObject, ObservableObject {
 
     private var photoOutput: AVCapturePhotoOutput?
     private var currentPhotoDelegate: PhotoCaptureDelegate?
+    private var captureDevice: AVCaptureDevice?
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
+
+    // Deployment target is iOS 18.5, so the rotation coordinator (iOS 17+) is
+    // always available. A hardcoded videoRotationAngle is wrong: the angle
+    // that maps the sensor's native (landscape) output to an upright portrait
+    // photo depends on the camera's physical mounting and isn't a constant
+    // like 0 - the coordinator computes the correct value.
+    //
+    // Binding the coordinator to the preview layer (instead of `nil`) is what
+    // lets AVFoundation keep the preview's connection rotation angle in sync
+    // going forward on its own. A one-time read only produced a value that
+    // was correct at that instant - it went stale (and the preview rotated
+    // 90°) as soon as the video device's active format changed, which
+    // `capturePhoto` does internally for the still-image capture.
+    func attachPreviewLayer(_ previewLayer: AVCaptureVideoPreviewLayer) {
+        // `makeUIView` can run before `setupSession`'s async block has
+        // assigned `captureDevice` (it runs as soon as `isAuthorized` flips
+        // true, independent of setup completing) — safe to no-op and let
+        // `updateUIView` retry once the device is actually available.
+        guard rotationCoordinator == nil, let captureDevice else { return }
+        rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: captureDevice, previewLayer: previewLayer)
+    }
 
     private override init() {
         super.init()
@@ -142,6 +165,7 @@ class CameraManager: NSObject, ObservableObject {
             do {
                 let input = try AVCaptureDeviceInput(device: camera)
                 if self.session.canAddInput(input) { self.session.addInput(input) }
+                self.captureDevice = camera
             } catch {
                 print("❌ CRITICAL: Error creating camera input: \(error.localizedDescription)")
                 self.session.commitConfiguration()
@@ -175,6 +199,15 @@ class CameraManager: NSObject, ObservableObject {
         guard let photoOutput = photoOutput else { print("❌ No photo output available"); completion(nil); return }
         guard session.isRunning else { print("❌ Session not running - cannot capture"); completion(nil); return }
 
+        // Re-read the coordinator's angle on every capture rather than caching
+        // it once — see the comment on `attachPreviewLayer` above.
+        if let connection = photoOutput.connection(with: .video) {
+            let angle = rotationCoordinator?.videoRotationAngleForHorizonLevelCapture ?? 90
+            if connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+        }
+
         let settings = AVCapturePhotoSettings()
         if #available(iOS 16.0, *) {
             settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
@@ -200,17 +233,7 @@ struct CameraPreviewView: UIViewRepresentable {
 
         let previewLayer = AVCaptureVideoPreviewLayer(session: cameraManager.session)
         previewLayer.videoGravity = .resizeAspectFill
-        if let connection = previewLayer.connection {
-            if #available(iOS 17.0, *) {
-                if connection.isVideoRotationAngleSupported(0) {
-                    connection.videoRotationAngle = 0
-                }
-            } else {
-                if connection.isVideoOrientationSupported {
-                    connection.videoOrientation = .portrait
-                }
-            }
-        }
+        cameraManager.attachPreviewLayer(previewLayer)
         view.layer.addSublayer(previewLayer)
 
         context.coordinator.previewLayer = previewLayer
@@ -219,6 +242,7 @@ struct CameraPreviewView: UIViewRepresentable {
 
     func updateUIView(_ uiView: UIView, context: Context) {
         if let previewLayer = context.coordinator.previewLayer {
+            cameraManager.attachPreviewLayer(previewLayer)
             DispatchQueue.main.async {
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)

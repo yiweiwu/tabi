@@ -24,9 +24,10 @@ struct AuthenticationPageView: View {
             VStack(spacing: 16) {
                     // Header
                     VStack(spacing: 8) {
-                        Image(systemName: "pills.fill")
-                            .font(.system(size: 26))
-                            .foregroundColor(.tabiLavender)
+                        Image("app-logo")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 48, height: 48)
 
                         Text("Sign up")
                             .font(.title2.bold())

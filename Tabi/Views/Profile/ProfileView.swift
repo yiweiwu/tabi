@@ -74,9 +74,15 @@ struct ProfileView: View {
 
                     // Menu items
                     VStack(spacing: 0) {
+                        let pharmacies = profileStore.profile.pharmacies
+                        let pharmacySubtitle: String = {
+                            guard let first = pharmacies.first else { return "" }
+                            let extraCount = pharmacies.count - 1
+                            return extraCount > 0 ? "\(first.name) +\(extraCount) more" : first.name
+                        }()
                         let menuItems: [(String, String, String)] = [
                             ("heart.text.square", "Allergy", ""),
-                            ("cross.case",         "My Pharmacies",            ""),
+                            ("cross.case",         "My Pharmacies",            pharmacySubtitle),
                             ("gearshape",          "Setting",                  ""),
                         ]
                         ForEach(menuItems, id: \.1) { item in
