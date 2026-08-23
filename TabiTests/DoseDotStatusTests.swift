@@ -98,3 +98,76 @@ struct DoseDotStatusTests {
         #expect(doseDotStatus(for: UUID(), on: Date(), entriesByMedicationId: [:]) == nil)
     }
 }
+
+// MARK: - Weekly Adherence Scenario Tests
+
+// End-to-end coverage for the scenario a real medication produces: a 3x/day
+// prescription tracked for a full week should yield exactly one dot per day
+// (7 total, matching frequencyPerDay entries per day), each correctly
+// reflecting that day's mix of taken/missed doses. "Some missed" and "all
+// missed" both read as the same .missed dot by design - the Calendar dot
+// only distinguishes taken-everything vs missed-something, not degrees of
+// missing (see DoseDotStatusTests above and .claude/rules/dose-tracking.md).
+@Suite
+struct WeeklyAdherenceScenarioTests {
+
+    private let medId = UUID()
+    private let doseHours = [8, 14, 20]
+
+    private func entry(on day: Date, hour: Int, status: DoseStatus) -> DoseEntry {
+        let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: day)!
+        return DoseEntry(medicationId: medId, medicationName: "Amoxicillin", dosage: "500mg", scheduledDate: date, status: status)
+    }
+
+    @Test("A week of a 3x/day medication produces exactly 7 days with a dot, each aggregated correctly")
+    func testSevenDaysEachCorrectlyAggregated() throws {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let days = (0..<7).map { cal.date(byAdding: .day, value: -$0, to: today)! }
+
+        // One outcome per day, cycling through all three real-world cases
+        // twice+ across the week: all taken, some missed, all missed.
+        let dailyStatuses: [[DoseStatus]] = [
+            [.taken(days[0]), .taken(days[0]), .taken(days[0])],  // all taken
+            [.taken(days[1]), .missed, .taken(days[1])],          // some missed
+            [.missed, .missed, .missed],                          // all missed
+            [.taken(days[3]), .taken(days[3]), .taken(days[3])],  // all taken
+            [.missed, .taken(days[4]), .missed],                  // some missed
+            [.missed, .missed, .missed],                          // all missed
+            [.taken(days[6]), .taken(days[6]), .taken(days[6])]   // all taken
+        ]
+        let expected: [DoseDotStatus] = [.taken, .missed, .missed, .taken, .missed, .missed, .taken]
+
+        var allEntries: [DoseEntry] = []
+        for (dayIndex, day) in days.enumerated() {
+            for (doseIndex, hour) in doseHours.enumerated() {
+                allEntries.append(entry(on: day, hour: hour, status: dailyStatuses[dayIndex][doseIndex]))
+            }
+        }
+        #expect(allEntries.count == 21, "3 doses/day x 7 days")
+        let byMed = [medId: allEntries]
+
+        let results = days.map { doseDotStatus(for: medId, on: $0, entriesByMedicationId: byMed) }
+
+        #expect(results.allSatisfy { $0 != nil }, "Every day in the week should resolve to a dot")
+        #expect(results.compactMap { $0 } == expected)
+    }
+
+    @Test("'Some missed' and 'all missed' are both .missed - the dot doesn't distinguish degrees of missing")
+    func testPartialAndFullMissBothReadAsMissed() throws {
+        let day = Calendar.current.startOfDay(for: Date())
+        let someMissed = [medId: [
+            entry(on: day, hour: 8, status: .taken(day)),
+            entry(on: day, hour: 14, status: .missed),
+            entry(on: day, hour: 20, status: .taken(day))
+        ]]
+        let allMissed = [medId: [
+            entry(on: day, hour: 8, status: .missed),
+            entry(on: day, hour: 14, status: .missed),
+            entry(on: day, hour: 20, status: .missed)
+        ]]
+
+        #expect(doseDotStatus(for: medId, on: day, entriesByMedicationId: someMissed) == .missed)
+        #expect(doseDotStatus(for: medId, on: day, entriesByMedicationId: allMissed) == .missed)
+    }
+}

@@ -41,6 +41,17 @@ rules_version = '2';
 //     NOTE: Firestore rules cannot iterate list contents, so individual
 //     entry fields inside the list are NOT deeply validated here - only
 //     the list itself (presence, type, size cap).
+//     Two separate writers, split by status: the client writes "taken"/
+//     "skipped" only, in direct response to a user action (MedicationStore.
+//     markTodaysDoseTaken/Skipped). "missed" is written exclusively by the
+//     checkMissedDoses Cloud Function (Admin SDK, bypasses these rules) on
+//     an hourly schedule, inside a transaction (so a client's concurrent
+//     taken/skipped write is never clobbered) - it flips overdue "upcoming"
+//     entries to "missed" independently of whether any client is open, so
+//     a caretaker still gets alerted if the patient hasn't opened the app
+//     in days. An entry already "missed" can still be overridden by a late
+//     taken/skipped tap - see MedicationStore.earliestUnresolvedEntry. See
+//     functions/index.js and .claude/rules/dose-tracking.md.
 //
 // Collection: users/{userId}/medications/{medicationId}
 // Document ID: medicationId (UUID string, matches Medication.id)
@@ -68,10 +79,26 @@ rules_version = '2';
 //     by the confirmCaretakerOptIn Cloud Function via the Admin SDK, which
 //     bypasses these rules. See isValidOptInStatus().
 //
-// Collection: missed_pill_alerts/{alertId} (top-level, not user-scoped)
-// Written by any signed-in client when a dose goes missed; only the
-// sendMissedPillAlert Cloud Function (Admin SDK, bypasses these rules)
-// reads/deletes it, so clients may only create.
+// Collection: missed_pill_alerts/{alertId}
+// Document ID: deterministic - `{entryId}_{caretakerPhone}` (not an
+// auto-generated ID) - both the client (MissedDoseAlertService.alertDocId)
+// and checkMissedDoses can independently decide the same dose is newly
+// missed and both attempt to write this doc; whichever writes first is the
+// one that actually sends an SMS (sendMissedPillAlert only fires on
+// document *create*, never *update*), and the other's write to the same ID
+// is a harmless no-op. This is what makes the two independent detectors
+// (client fast-path, server hourly backstop) safe to run without
+// coordinating with each other.
+// (top-level, not user-scoped)
+// Written by any signed-in client when a dose goes missed, or by the
+// checkMissedDoses Cloud Function (Admin SDK, bypasses these rules and the
+// isSignedIn() check below) when it detects a missed dose on its hourly
+// schedule; only the sendMissedPillAlert Cloud Function (Admin SDK, also
+// bypasses these rules) reads it, so clients may only create - note this
+// means a client's write attempt on a deterministic ID that already exists
+// (the "update" case) is a permission-denied rejection, not a silent
+// success - see MissedDoseAlertService.sendAlert's doc comment for why
+// that's still the expected, harmless outcome, not a bug.
 // Fields:
 //   - caretakerPhone: string (required)
 //   - medicationName: string (required)

@@ -12,10 +12,20 @@ class MissedDoseAlertService {
     static let shared = MissedDoseAlertService()
     private init() {}
 
-    // Calls SharedPeopleStore.refresh() (force re-fetch) rather than
-    // fetchIfNeeded() - a caretaker's optInStatus can flip server-side, so
-    // whatever the cache held from app launch might be stale by the time a
-    // dose actually goes missed.
+    // Alert docs use a deterministic ID (entryId + phone) instead of an
+    // auto-generated one, and this is a plain overwrite, not a guarded
+    // create. That's deliberate idempotency, not an oversight: this same
+    // dose entry can be detected as "newly missed" more than once from more
+    // than one source - CalendarStore.checkMissed no longer persists the
+    // `.missed` flip (see its doc comment), so it re-detects the same
+    // unresolved entry on every 60s tick while the app stays open; the
+    // server-side checkMissedDoses Cloud Function independently detects the
+    // same entry on its own hourly schedule. `sendMissedPillAlert`
+    // (functions/index.js) only fires on Firestore's document-*create*
+    // event, never on update - so whichever of these write attempts reaches
+    // this ID first triggers exactly one SMS, and every later attempt for
+    // the same (entry, phone) pair is a harmless no-op write to a doc that
+    // already exists.
     func sendAlert(for entry: DoseEntry) {
         Task {
             await SharedPeopleStore.shared.refresh()
@@ -29,12 +39,21 @@ class MissedDoseAlertService {
                 let alert = MissedPillAlert(caretakerPhone: phone, medicationName: entry.medicationName, scheduledDate: entry.scheduledDate)
                 guard let dict = alert.firestoreDict() else { continue }
                 do {
-                    try await alerts.addDocument(data: dict)
+                    try await alerts.document(Self.alertDocId(entryId: entry.id, phone: phone)).setData(dict)
                 } catch {
-                    print("MissedDoseAlertService: failed to write alert for \(phone) - \(error.localizedDescription)")
+                    // Firestore rules only allow `create` on this collection
+                    // (never `update`), so a permission-denied here almost
+                    // always means this exact (entry, phone) alert was
+                    // already written by an earlier attempt - the expected,
+                    // benign outcome of the dedup scheme above, not a bug.
+                    print("MissedDoseAlertService: write for \(phone) rejected (likely already alerted) - \(error.localizedDescription)")
                 }
             }
         }
+    }
+
+    static func alertDocId(entryId: UUID, phone: String) -> String {
+        "\(entryId.uuidString)_\(phone)"
     }
 }
 

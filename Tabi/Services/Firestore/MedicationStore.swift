@@ -171,6 +171,7 @@ class MedicationStore: ObservableObject, FirestoreCacheStore {
             NotificationScheduler.shared.cancel(for: medication.id)
         }
         medications.removeAll { $0.id == medication.id }
+        CalendarStore.shared.remove(medicationId: medication.id)
         Task { await deleteRemote(medication) }
     }
 
@@ -198,16 +199,34 @@ class MedicationStore: ObservableObject, FirestoreCacheStore {
         markTodaysDoseTaken(for: med)
     }
 
-    // Marks the earliest still-`.upcoming` DoseEntry for today as `.taken`
-    // so the Calendar and Progress views actually reflect a real Taken tap,
-    // instead of the entry silently staying `.upcoming` (or later flipping
-    // to `.missed`) despite the user having taken the dose.
-    private func markTodaysDoseTaken(for medication: Medication) {
-        let todaysUpcoming = CalendarStore.shared.loadAll(forMedicationId: medication.id)
-            .filter { Calendar.current.isDateInToday($0.scheduledDate) }
+    // The earliest entry today still open to a Taken/Skip tap - `.upcoming`
+    // (hasn't happened) or `.missed` (the server's checkMissedDoses Cloud
+    // Function already flagged it overdue, but the user is acting on it
+    // late and that action should win). `.taken`/`.skipped` are final, not
+    // matched here. Pure and separate from the Firestore reads/writes below
+    // so it's testable without live Firebase - see
+    // MedicationStoreDoseSelectionTests.
+    static func earliestUnresolvedEntry(in entries: [DoseEntry], on day: Date = Date()) -> DoseEntry? {
+        let cal = Calendar.current
+        return entries
+            .filter { cal.isDate($0.scheduledDate, inSameDayAs: day) }
             .sorted { $0.scheduledDate < $1.scheduledDate }
-            .first { if case .upcoming = $0.status { return true }; return false }
-        guard let entry = todaysUpcoming else { return }
+            .first {
+                switch $0.status {
+                case .upcoming, .missed: return true
+                case .taken, .skipped: return false
+                }
+            }
+    }
+
+    // Marks the earliest unresolved DoseEntry for today as `.taken` so the
+    // Calendar and Progress views actually reflect a real Taken tap,
+    // instead of the entry silently staying `.upcoming`/`.missed` despite
+    // the user having taken the dose - including a late tap on a dose the
+    // server already flagged missed, which should override that.
+    private func markTodaysDoseTaken(for medication: Medication) {
+        let entries = CalendarStore.shared.loadAll(forMedicationId: medication.id)
+        guard let entry = Self.earliestUnresolvedEntry(in: entries) else { return }
         CalendarStore.shared.updateStatus(entryId: entry.id, medicationId: medication.id, status: .taken(Date()))
     }
 
@@ -233,15 +252,11 @@ class MedicationStore: ObservableObject, FirestoreCacheStore {
         markTodaysDoseSkipped(for: med)
     }
 
-    // Marks the earliest still-`.upcoming` DoseEntry for today as `.skipped`
-    // so the Calendar view reflects the skip and the missed-dose checker
-    // doesn't later flip it to `.missed` and fire a false caretaker alert.
+    // Marks the earliest unresolved DoseEntry for today as `.skipped` - see
+    // markTodaysDoseTaken above for why `.missed` is matched here too.
     private func markTodaysDoseSkipped(for medication: Medication) {
-        let todaysUpcoming = CalendarStore.shared.loadAll(forMedicationId: medication.id)
-            .filter { Calendar.current.isDateInToday($0.scheduledDate) }
-            .sorted { $0.scheduledDate < $1.scheduledDate }
-            .first { if case .upcoming = $0.status { return true }; return false }
-        guard let entry = todaysUpcoming else { return }
+        let entries = CalendarStore.shared.loadAll(forMedicationId: medication.id)
+        guard let entry = Self.earliestUnresolvedEntry(in: entries) else { return }
         CalendarStore.shared.updateStatus(entryId: entry.id, medicationId: medication.id, status: .skipped(Date()))
     }
 
