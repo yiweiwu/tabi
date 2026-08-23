@@ -128,6 +128,19 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Gates document *creation* (not read/update/delete - see the Rules
+    // section below for why that's sufficient) on email verification for
+    // new email/password accounts. emailVerificationRequired is a custom
+    // claim stamped onto the ID token by the onUserCreate Cloud Function
+    // (functions/index.js) at account-creation time - Apple/Google
+    // sign-ins never get it (Firebase already marks those verified), and
+    // accounts created before that function existed never got it either,
+    // which is what grandfathers pre-existing users in automatically.
+    function isEmailVerifiedOrExempt() {
+      return request.auth.token.email_verified == true ||
+             request.auth.token.get('emailVerificationRequired', false) != true;
+    }
+
     // The client may create/update with optInStatus absent, null, or
     // 'pending'. 'confirmed' may only appear if it was already the stored
     // value (i.e. set by confirmCaretakerOptIn's Admin SDK write, which
@@ -254,21 +267,30 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, delete: if isOwner(userId);
-      allow create, update: if isOwner(userId) && isValidUserProfile();
+      // Only create is gated on verification, not update: a doc can only
+      // exist to update in the first place if its create already passed
+      // this same check (or predates the check entirely), so gating create
+      // alone is sufficient and keeps grandfathered accounts' every-day
+      // writes completely unaffected.
+      allow create: if isOwner(userId) && isValidUserProfile() && isEmailVerifiedOrExempt();
+      allow update: if isOwner(userId) && isValidUserProfile();
 
       match /doses/{medicationId} {
         allow read, delete: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidDosesDoc();
+        allow create: if isOwner(userId) && isValidDosesDoc() && isEmailVerifiedOrExempt();
+        allow update: if isOwner(userId) && isValidDosesDoc();
       }
 
       match /medications/{medicationId} {
         allow read, delete: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidMedicationDoc();
+        allow create: if isOwner(userId) && isValidMedicationDoc() && isEmailVerifiedOrExempt();
+        allow update: if isOwner(userId) && isValidMedicationDoc();
       }
 
       match /sharedPeople/{personId} {
         allow read, delete: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidSharedPerson();
+        allow create: if isOwner(userId) && isValidSharedPerson() && isEmailVerifiedOrExempt();
+        allow update: if isOwner(userId) && isValidSharedPerson();
       }
     }
 

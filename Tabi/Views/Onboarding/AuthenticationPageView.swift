@@ -278,7 +278,25 @@ struct AuthenticationPageView: View {
                 await UserProfileStore.shared.fetchIfNeeded()
                 prefillFromExistingProfile()
                 isSigningIn = false
-                coordinator.nextPage()
+                // A brand-new signup is always subject to the gate - it's
+                // deterministically a fresh account, so there's no need to
+                // wait on the onUserCreate claim (which may not have
+                // propagated to a token fetched this instant) to know that.
+                // A sign-in has to actually check: an old, pre-feature
+                // account is just as unverified but was never asked to be,
+                // and should never see this gate - see
+                // currentUserRequiresEmailVerificationGate().
+                let requiresGate: Bool
+                if isSignInMode {
+                    requiresGate = await AuthenticationManager.shared.currentUserRequiresEmailVerificationGate()
+                } else {
+                    requiresGate = !AuthenticationManager.shared.isCurrentUserEmailVerified
+                }
+                if requiresGate {
+                    coordinator.currentPage = .emailVerification
+                } else {
+                    coordinator.nextPage()
+                }
             } catch {
                 isSigningIn = false
                 authError = error.localizedDescription
