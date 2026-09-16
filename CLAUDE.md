@@ -28,23 +28,23 @@ project `tabi-47030`) are documented in `README.md`; the rules-deploy gotcha is 
 
 Prefer an existing skill over improvising the same work by hand.
 
-You can run `/start`, `/sync`, and `/ship` (`.claude/skills/`) yourself — figure
-out when, don't wait to be asked. Never do their underlying git work by hand instead
-(no manual `git checkout -b`, `git commit`, `git push` as a substitute) — invoke the
-skill so it talks to the user the way it's written to: plain language, no "commit",
-"stash", "branch", or raw diffs.
+`/start`, `/sync`, and `/ship` (`.claude/skills/`) are yours to run, not only the
+user's — decide when on your own judgment rather than waiting to be asked. Always
+invoke the skill itself instead of doing its git work by hand (no manual
+`git checkout -b`, `git commit`, `git push` as a substitute) — the skill is written
+to talk to the user in plain language, with no "commit", "stash", "branch", or raw
+diffs, and hand-rolling the same git commands skips that.
 
-**Development workflow:**
+They split into two permission tiers:
 
-1. **Starting a new feature or bugfix** → run `/start`. If you're on `main` and
-   about to make a change, this is not optional — run it first, no need to ask.
-2. **The feature or bugfix is complete** → ask the user whether to `/ship` it.
-   This is the one step that always needs a yes first, since it pushes, opens a
-   PR, and merges into `main`. Don't skip that check, and don't substitute your
-   own "should I ship this?" phrasing for the skill's own prompts — let `/ship`
-   ask what it asks.
-3. **After a PR merges, or any time the branch should catch up with `main`** →
-   run `/sync` on your own judgment, no need to ask first.
+- **No permission needed — just run it:** `/start` the moment you're about to make
+  a change while sitting on `main`, or whenever new work is starting. `/sync`
+  whenever the branch should catch up with `main` — after a PR merges, or anytime
+  work has been going a while.
+- **Always confirm first:** `/ship`. It pushes, opens a PR, and merges into `main` —
+  the one step visible outside this conversation — so ask before running it even
+  when the work looks finished. Once confirmed, let `/ship`'s own prompts run
+  rather than pre-empting them with your own "should I ship this?" phrasing.
 
 Never commit directly to `main` yourself under any circumstance.
 
@@ -123,7 +123,8 @@ Tabi/
 ```
 
 Outside the app target: `functions/` (Cloud Functions — missed-dose sweep and
-caretaker SMS), `TabiTests/`, `firestore.rules`.
+caretaker SMS), `TabiTests/`, `firestore.rules`, `docs/` (privacy/compliance and
+legal docs — see Privacy & Compliance below).
 
 **Where to add new code:**
 - New screen → `Views/<FeatureName>/`
@@ -184,15 +185,12 @@ Always use the semantic colors from `DesignSystem.swift`:
 
 ## Privacy & Compliance
 
-Tabi stores medication, dosage, and profile data that's regulated under CMIA,
-Washington's My Health My Data Act, and CCPA/CPRA even though HIPAA itself
-doesn't apply to us as a direct-to-consumer app. Before adding any feature that
-shares user data with a third party (including caretaker SMS), adds a new
-stored field, or touches analytics/research/monetization, read
-`PRIVACY_COMPLIANCE.md` at the repo root — it has the specific guardrails and a
-pre-flight checklist.
+Before adding any feature that shares user data with a third party (including
+caretaker SMS), adds a new stored field, or touches analytics/research/monetization,
+read `docs/PRIVACY_COMPLIANCE.md` — it covers which privacy laws apply
+to Tabi and has the specific guardrails and a pre-flight checklist.
 
-User-facing legal docs live at the repo root: `PRIVACY_POLICY.md` and
+User-facing legal docs live in `docs/`: `PRIVACY_POLICY.md` and
 `TERMS_OF_SERVICE.md` (mirrored in-app via `PrivacyPolicyView.swift`, linked
 from the auth screen and Settings → Privacy). `AuthenticationManager.deleteAccountAndAllData()`
 plus `MedicationStore.deleteAllLocalData()` implement the account/data
