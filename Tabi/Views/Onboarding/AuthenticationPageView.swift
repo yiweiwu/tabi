@@ -181,15 +181,6 @@ struct AuthenticationPageView: View {
                             handleSignInWithApple()
                         }
                         .disabled(isSigningIn)
-
-                        // Continue with Facebook
-                        SocialLoginButton(
-                            icon: "f.circle.fill",
-                            title: "Continue with Facebook",
-                            iconColor: Color(red: 0.23, green: 0.35, blue: 0.60)
-                        ) {
-                            handleFacebookSignIn()
-                        }
                     }
                     .padding(.horizontal, 32)
 
@@ -431,11 +422,6 @@ struct AuthenticationPageView: View {
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
             .first { $0.isKeyWindow }?.rootViewController
-    }
-    
-    private func handleFacebookSignIn() {
-        print("Facebook Sign In tapped")
-        coordinator.nextPage()
     }
 }
 
