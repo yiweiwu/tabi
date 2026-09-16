@@ -3,8 +3,7 @@ import SwiftUI
 // MARK: - Privacy Policy (interim, in-app disclosure)
 
 // This is a plain-language summary of what Tabi actually does with your
-// data today, not a finalized legal document - see PRIVACY_COMPLIANCE.md
-// at the repo root.
+// data today, not a finalized legal document - see docs/PRIVACY_COMPLIANCE.md.
 struct PrivacyPolicyView: View {
     @Environment(\.dismiss) private var dismiss
 
