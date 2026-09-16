@@ -1,5 +1,10 @@
 # CLAUDE.md — Tabi iOS App
 
+This file is for Claude. Human-facing material — first-time setup, the day-to-day
+branch workflow, what the team should type — lives in `README.md`. Keep it there;
+don't duplicate it here, and when onboarding or workflow changes, update `README.md`
+rather than growing this file.
+
 ## Build & Run
 
 ```bash
@@ -14,6 +19,56 @@ xcrun xcodebuild test -scheme Tabi -destination 'platform=iOS Simulator,name=iPh
 ```
 
 **Available simulators**: iPhone 17, iPhone 16e, iPhone Air. Do NOT use "iPhone 16" — it doesn't exist in this environment.
+
+Backend deploys (`firebase deploy --only functions` / `--only firestore:rules`,
+project `tabi-47030`) are documented in `README.md`; the rules-deploy gotcha is in
+`.claude/rules/firestore.md`.
+
+## Skills
+
+Prefer an existing skill over improvising the same work by hand.
+
+You can run `/start`, `/sync`, and `/ship` (`.claude/skills/`) yourself — figure
+out when, don't wait to be asked. Never do their underlying git work by hand instead
+(no manual `git checkout -b`, `git commit`, `git push` as a substitute) — invoke the
+skill so it talks to the user the way it's written to: plain language, no "commit",
+"stash", "branch", or raw diffs.
+
+**Development workflow:**
+
+1. **Starting a new feature or bugfix** → run `/start`. If you're on `main` and
+   about to make a change, this is not optional — run it first, no need to ask.
+2. **The feature or bugfix is complete** → ask the user whether to `/ship` it.
+   This is the one step that always needs a yes first, since it pushes, opens a
+   PR, and merges into `main`. Don't skip that check, and don't substitute your
+   own "should I ship this?" phrasing for the skill's own prompts — let `/ship`
+   ask what it asks.
+3. **After a PR merges, or any time the branch should catch up with `main`** →
+   run `/sync` on your own judgment, no need to ask first.
+
+Never commit directly to `main` yourself under any circumstance.
+
+Reach for these yourself when the work matches:
+
+| Skill | Use when |
+|---|---|
+| `swiftui-pro` | Writing or reviewing any non-trivial SwiftUI. Reports real problems only — no nitpicking. |
+| `xcode-project-setup` | Adding a Swift Package or otherwise touching `.pbxproj`. Never hand-edit that file. |
+| `firebase-firestore` | Any Firestore work at all — queries, data modeling, indexes. Its own description says to activate it unconditionally. |
+| `firebase-security-rules-auditor` | `firestore.rules` changed. Run it before shipping the change. |
+| `firebase-basics` | Firebase CLI, login, project selection, `GoogleService-Info.plist` |
+| `firebase-auth-basics` | `AuthenticationManager` / sign-in flows |
+| `firebase-crashlytics`, `firebase-remote-config-basics`, `firebase-ai-logic-basics` | Those specific products |
+
+`firebase-hosting-basics`, `firebase-app-hosting-basics`, and `firebase-data-connect`
+are installed but unused by Tabi — don't reach for them.
+
+`.claude/skills/verifier-ios.md` has the build/install/screenshot loop for verifying
+a change on the simulator.
+
+Installed skills are symlinks from `.claude/skills/` into `.agents/skills/`, pinned
+in `skills-lock.json`. Don't edit a vendored skill in place — the hash is what
+tracks it upstream.
 
 ## Project Setup
 
@@ -66,6 +121,9 @@ Tabi/
     ├── Progress/  — MedicationProgressView, AchievementRow, WeeklyProgressView
     └── Onboarding/ — OnboardingFlow (coordinator + most pages, entry point is now WelcomeToTabiPageView), AuthenticationPageView, EmailVerificationGateView, ProfileSetupPageView, PermissionsPageView, CompletionPageView
 ```
+
+Outside the app target: `functions/` (Cloud Functions — missed-dose sweep and
+caretaker SMS), `TabiTests/`, `firestore.rules`.
 
 **Where to add new code:**
 - New screen → `Views/<FeatureName>/`
@@ -144,7 +202,7 @@ ever changes.
 ## Common Gotchas
 
 - `pillColors` is a module-level `let` in `DesignSystem.swift`, not a static member. Access it directly: `pillColors[index]`.
-- `GoogleService-Info.plist` is gitignored — never commit it. Obtain it from a teammate.
+- `GoogleService-Info.plist` and `Tabi/Config.swift` (the Gemini API key) are gitignored — never commit either. Setup instructions for both are in `README.md`.
 - `PRODUCT_BUNDLE_IDENTIFIER` (the `Tabi` target's build setting) must match `GoogleService-Info.plist`'s `BUNDLE_ID`. Because the plist is gitignored, a mismatch never shows up in a PR diff — a "Verify GoogleService-Info.plist bundle ID" build phase checks this on every build and fails loudly if they diverge. If you change the bundle ID, re-download the plist from the Firebase console for that bundle ID.
 
 ## Feature-scoped rules
